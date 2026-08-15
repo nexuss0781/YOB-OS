@@ -39,11 +39,11 @@
 
 - [x] Obtain a Vercel CLI access token with access to the YOB-OS team if the terminal session remains unauthenticated.
 
-- [ ] Verify the Vercel Node.js configuration, resolve the current deployment failure, and prepare YOB-OS for production publication.
+- [x] Verify the Vercel Node.js configuration, resolve the current deployment failure, and prepare YOB-OS for production publication.
 
 - [x] Add a Vercel-recognized Node.js entrypoint so the Express application is discovered during Vercel builds.
 
-- [ ] Trigger a Vercel redeployment from the updated source and confirm the Node preset recognizes `server.ts` without an entrypoint error.
+- [x] Trigger a Vercel redeployment from the updated source and confirm the Node preset recognizes `server.ts` without an entrypoint error.
 
 - [x] Commit and push the Vercel Node entrypoint fix to `nexuss0781/YOB-OS` so the connected Vercel project receives the updated source.
 
