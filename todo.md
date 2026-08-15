@@ -53,3 +53,4 @@
 - [x] Remove obsolete OAuth routes, configuration, client redirects, and deployment variables while preserving protected YOB-OS workflows.
 - [x] Verify or remove obsolete OAuth-related variables from the Vercel production environment.
 - [x] Reconcile the stale local Vercel project link with the active `yob-os.vercel.app` project.
+- [x] Configure the Android client to use `https://yob-os.vercel.app` as its production authentication and API base URL.

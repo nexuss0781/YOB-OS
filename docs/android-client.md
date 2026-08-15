@@ -2,7 +2,7 @@
 
 The Expo client is located in `apps/android`. It is a real mobile client rather than a web wrapper: its home, Play Store, installs, explicit updates, removals, wallpaper choice, app-launch flow, and publisher lifecycle controls call the same authenticated tRPC API as the web product.
 
-Before creating an Android development or release build, set the `EXPO_PUBLIC_API_BASE_URL` environment variable to the HTTPS address of the deployed YOB-OS service. The runtime also exposes a connection field inside the Android Settings tab for development and recovery scenarios.
+Android builds default to `https://yob-os.vercel.app` for their authenticated tRPC API and first-party email-and-password sign-in. The runtime also exposes a connection field inside the Android Settings tab for development and recovery scenarios.
 
 ## Native sign-in
 

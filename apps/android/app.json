@@ -11,7 +11,7 @@
       "edgeToEdgeEnabled": true
     },
     "extra": {
-      "apiBaseUrl": "${EXPO_PUBLIC_API_BASE_URL}"
+      "apiBaseUrl": "https://yob-os.vercel.app"
     }
   }
 }

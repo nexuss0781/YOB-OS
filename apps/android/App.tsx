@@ -594,7 +594,7 @@ function Settings({
           <TextInput
             value={apiBaseUrl}
             onChangeText={setApiBaseUrl}
-            placeholder="https://your-yob-os-domain.manus.space"
+            placeholder="https://yob-os.vercel.app"
             placeholderTextColor="#77758e"
             autoCapitalize="none"
             autoCorrect={false}
@@ -602,8 +602,8 @@ function Settings({
             style={[local.search, { height: 52 }]}
           />
           <Text style={[styles.body, { marginTop: 15 }]}>
-            For release builds, define EXPO_PUBLIC_API_BASE_URL before building
-            so this value is preconfigured.
+            Release builds are preconfigured for yob-os.vercel.app. Use this
+            field only to connect a development or recovery environment.
           </Text>
           {token && (
             <Action label="Sign out" onPress={() => void onLogout()} danger />
