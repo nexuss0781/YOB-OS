@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Vercel entrypoint", () => {
-  it("exports the Express app from the supported root entry", () => {
+  it("exports the Express app and keeps static output explicit", () => {
     const root = resolve(process.cwd());
     const packagePath = resolve(root, "package.json");
     const rootEntryPath = resolve(root, "server.ts");
@@ -17,13 +17,13 @@ describe("Vercel entrypoint", () => {
       outputDirectory?: string;
     };
 
-    expect(manifest.main).toBeUndefined();
+    expect(manifest.main).toBe("server.ts");
     expect(existsSync(rootEntryPath)).toBe(true);
     expect(readFileSync(rootEntryPath, "utf8")).toContain(
       "export default createApp();",
     );
     expect(existsSync(apiDirectoryPath)).toBe(false);
-    expect(vercelConfig.framework).toBeUndefined();
-    expect(vercelConfig.outputDirectory).toBeUndefined();
+    expect(vercelConfig.framework).toBeNull();
+    expect(vercelConfig.outputDirectory).toBe("public");
   });
 });
