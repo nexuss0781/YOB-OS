@@ -105,6 +105,8 @@ describe.skipIf(!runLiveValidation || !hasDatabase)(
       const launchV1 = await caller.yob.home.launch({ appId });
       expect(launchV1.htmlUrl).toContain("/manus-storage/yob-os/apps/");
       expect(launchV1.version).toBe("1.0.0");
+      expect(launchV1.runtime).toBe("html-game");
+      expect(launchV1.contentChecksum).toMatch(/^[a-f0-9]{64}$/);
 
       await caller.yob.publisher.publishVersion({
         appId,
