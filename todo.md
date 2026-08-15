@@ -45,4 +45,11 @@
 
 - [ ] Trigger a Vercel redeployment from the updated source and confirm the Node preset recognizes `server.ts` without an entrypoint error.
 
-- [ ] Commit and push the Vercel Node entrypoint fix to `nexuss0781/YOB-OS` so the connected Vercel project receives the updated source.
+- [x] Commit and push the Vercel Node entrypoint fix to `nexuss0781/YOB-OS` so the connected Vercel project receives the updated source.
+
+- [x] Amend the GitHub deployment commit with an author email recognized by the authenticated GitHub account and push the corrected history.
+
+- [x] Replace inherited OAuth authentication with secure first-party email-and-password registration, login, and session handling.
+- [x] Remove obsolete OAuth routes, configuration, client redirects, and deployment variables while preserving protected YOB-OS workflows.
+- [x] Verify or remove obsolete OAuth-related variables from the Vercel production environment.
+- [x] Reconcile the stale local Vercel project link with the active `yob-os.vercel.app` project.

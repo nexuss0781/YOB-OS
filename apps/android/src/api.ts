@@ -30,6 +30,20 @@ export type LaunchPayload = {
 };
 
 export type YobApi = {
+  auth: {
+    mobileLogin: {
+      mutate(input: { email: string; password: string }): Promise<{
+        sessionToken: string;
+      }>;
+    };
+    mobileRegister: {
+      mutate(input: {
+        name: string;
+        email: string;
+        password: string;
+      }): Promise<{ sessionToken: string }>;
+    };
+  };
   yob: {
     store: {
       list: { query(input: { search?: string }): Promise<StoreApp[]> };

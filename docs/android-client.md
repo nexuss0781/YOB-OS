@@ -6,7 +6,7 @@ Before creating an Android development or release build, set the `EXPO_PUBLIC_AP
 
 ## Native sign-in
 
-The backend provides a dedicated `/api/native-auth/start` and callback exchange. It validates a short-lived nonce in an HTTP-only cookie, exchanges the OAuth authorization code server-side, and redirects only to `yobos://oauth` with the app session JWT. The client stores that token only in the platform secure keychain and transmits it as a bearer credential on protected tRPC requests.
+The Android client presents a local email-and-password sign-in or registration form. It calls the same first-party tRPC authentication procedures as the web app, stores only the signed session token in the platform secure keychain, and transmits that token as a bearer credential on protected tRPC requests. No browser handoff, deep-link callback, or third-party OAuth provider is used.
 
 ## App player restrictions
 

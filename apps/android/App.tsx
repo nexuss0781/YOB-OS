@@ -21,7 +21,12 @@ import {
   type WallpaperId,
   createApi,
 } from "./src/api";
-import { clearSessionToken, getSessionToken, signIn } from "./src/auth";
+import {
+  clearSessionToken,
+  getSessionToken,
+  registerWithPassword,
+  signInWithPassword,
+} from "./src/auth";
 import { colors, styles } from "./src/theme";
 
 type Tab = "home" | "store" | "settings";
@@ -47,6 +52,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [player, setPlayer] = useState<LaunchPayload | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
 
   const api = useMemo(
     () => (apiBaseUrl ? createApi(apiBaseUrl, async () => token) : null),
@@ -93,17 +102,31 @@ export default function App() {
       return null;
     }
     if (token) return token;
+    setTab("home");
+    return null;
+  };
+
+  const submitCredentials = async () => {
+    if (!apiBaseUrl) return void (await ensureSignedIn());
     try {
       setBusy(true);
-      const nextToken = await signIn(apiBaseUrl);
-      if (nextToken) setToken(nextToken);
-      return nextToken;
+      const nextToken =
+        authMode === "login"
+          ? await signInWithPassword(apiBaseUrl, authEmail, authPassword)
+          : await registerWithPassword(
+              apiBaseUrl,
+              authName,
+              authEmail,
+              authPassword
+            );
+      setToken(nextToken);
+      setAuthPassword("");
+      await refresh();
     } catch (error) {
       Alert.alert(
-        "Sign-in failed",
-        error instanceof Error ? error.message : "Unable to complete sign-in."
+        authMode === "login" ? "Sign-in failed" : "Account creation failed",
+        error instanceof Error ? error.message : "Unable to continue."
       );
-      return null;
     } finally {
       setBusy(false);
     }
@@ -240,7 +263,16 @@ export default function App() {
           <Home
             home={home}
             token={token}
-            onSignIn={() => void ensureSignedIn()}
+            authMode={authMode}
+            authName={authName}
+            authEmail={authEmail}
+            authPassword={authPassword}
+            busy={busy}
+            onAuthMode={setAuthMode}
+            onName={setAuthName}
+            onEmail={setAuthEmail}
+            onPassword={setAuthPassword}
+            onSignIn={() => void submitCredentials()}
             onLaunch={launch}
             onUpdate={update}
             onUninstall={uninstall}
@@ -290,6 +322,15 @@ export default function App() {
 function Home({
   home,
   token,
+  authMode,
+  authName,
+  authEmail,
+  authPassword,
+  busy,
+  onAuthMode,
+  onName,
+  onEmail,
+  onPassword,
   onSignIn,
   onLaunch,
   onUpdate,
@@ -298,6 +339,15 @@ function Home({
 }: {
   home: HomeSnapshot | null;
   token: string | null;
+  authMode: "login" | "register";
+  authName: string;
+  authEmail: string;
+  authPassword: string;
+  busy: boolean;
+  onAuthMode: (mode: "login" | "register") => void;
+  onName: (value: string) => void;
+  onEmail: (value: string) => void;
+  onPassword: (value: string) => void;
   onSignIn: () => void;
   onLaunch: (id: string) => void;
   onUpdate: (id: string) => void;
@@ -319,7 +369,56 @@ function Home({
         >
           Installations and wallpaper stay synchronized with your web home.
         </Text>
-        <Action label="Sign in to YOB-OS" onPress={onSignIn} primary />
+        {authMode === "register" && (
+          <TextInput
+            value={authName}
+            onChangeText={onName}
+            placeholder="Your name"
+            placeholderTextColor="#77758e"
+            style={local.authInput}
+          />
+        )}
+        <TextInput
+          value={authEmail}
+          onChangeText={onEmail}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          placeholder="you@example.com"
+          placeholderTextColor="#77758e"
+          style={local.authInput}
+        />
+        <TextInput
+          value={authPassword}
+          onChangeText={onPassword}
+          secureTextEntry
+          placeholder="Password"
+          placeholderTextColor="#77758e"
+          style={local.authInput}
+        />
+        <Action
+          label={
+            busy
+              ? "Working…"
+              : authMode === "login"
+                ? "Sign in"
+                : "Create account"
+          }
+          onPress={onSignIn}
+          primary
+        />
+        <Pressable
+          onPress={() =>
+            onAuthMode(authMode === "login" ? "register" : "login")
+          }
+          style={{ marginTop: 12 }}
+        >
+          <Text style={local.accountText}>
+            {authMode === "login"
+              ? "Create a YOB-OS account"
+              : "I already have an account"}
+          </Text>
+        </Pressable>
       </View>
     );
   const wallpaper =
@@ -665,6 +764,15 @@ const local = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 28,
+  },
+  authInput: {
+    ...styles.card,
+    color: colors.text,
+    width: "100%",
+    marginTop: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    fontSize: 14,
   },
   list: { paddingHorizontal: 20, paddingBottom: 100, gap: 12 },
   hero: {

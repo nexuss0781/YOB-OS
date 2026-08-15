@@ -16,12 +16,12 @@ describe("createApp", () => {
       .filter((path): path is string => Boolean(path));
     const middlewarePatterns = stack.map(layer => String(layer.regexp));
 
-    expect(routePaths).toEqual(
+    expect(routePaths).toEqual(expect.arrayContaining(["/manus-storage/*"]));
+    expect(routePaths).not.toEqual(
       expect.arrayContaining([
         "/api/oauth/callback",
         "/api/native-auth/start",
         "/api/native-auth/callback",
-        "/manus-storage/*",
       ])
     );
     expect(

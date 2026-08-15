@@ -1,4 +1,3 @@
-import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { YobAppPlayer } from "@/components/YobAppPlayer";
 import { YobIcon } from "@/components/YobIcon";
@@ -29,6 +28,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type HomeSnapshot = RouterOutputs["yob"]["home"]["snapshot"];
@@ -62,6 +62,7 @@ export default function YobOS() {
   const [search, setSearch] = useState("");
   const [player, setPlayer] = useState<PlayerApp | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
   const { user, loading: authLoading, isAuthenticated, logout } = useAuth();
   const utils = trpc.useUtils();
 
@@ -123,7 +124,7 @@ export default function YobOS() {
   const guarded = (action: () => void) => {
     if (!isAuthenticated) {
       toast.message("Sign in to manage your personal YOB-OS.");
-      startLogin();
+      setLocation("/login");
       return;
     }
     action();
@@ -202,7 +203,7 @@ export default function YobOS() {
             </div>
           ) : (
             <Button
-              onClick={startLogin}
+              onClick={() => setLocation("/login")}
               className="w-full rounded-xl bg-violet-300 font-bold text-slate-950 hover:bg-violet-200"
             >
               <LogIn size={16} />
@@ -234,7 +235,7 @@ export default function YobOS() {
             {!isAuthenticated && !authLoading && (
               <button
                 className="text-xs font-bold text-violet-200 hover:text-white md:hidden"
-                onClick={startLogin}
+                onClick={() => setLocation("/login")}
               >
                 Sign in
               </button>
@@ -258,7 +259,7 @@ export default function YobOS() {
             data={homeQuery.data}
             isLoading={homeQuery.isLoading}
             isAuthenticated={isAuthenticated}
-            onSignIn={startLogin}
+            onSignIn={() => setLocation("/login")}
             onLaunch={launch}
             onUpdate={appId =>
               update.mutate(
@@ -330,7 +331,7 @@ export default function YobOS() {
             apps={publisherQuery.data}
             loading={publisherQuery.isLoading}
             isAuthenticated={isAuthenticated}
-            onSignIn={startLogin}
+            onSignIn={() => setLocation("/login")}
             onPublish={() => {
               void publisherQuery.refetch();
               void utils.yob.store.list.invalidate();

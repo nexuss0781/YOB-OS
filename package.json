@@ -10,7 +10,7 @@
     "vercel-build": "pnpm build && rm -rf public && cp -R dist/public public",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
-    "lint": "prettier --check package.json README.md todo.md vercel.json server.ts docs apps/android client/index.html client/src/App.tsx client/src/index.css client/src/pages/Home.tsx client/src/pages/YobOS.tsx client/src/components/YobAppPlayer.tsx client/src/components/YobIcon.tsx client/src/lib/yob.ts server/_core/env.ts server/_core/oauth.ts server/app.ts server/app.test.ts server/paradox.ts server/paradox.credentials.test.ts server/vercel.entry.test.ts server/routers.ts server/routers/yob.ts server/yobStore.ts server/yob.auth.test.ts server/yob.integration.test.ts shared/types.ts shared/yob.ts shared/yob.test.ts vitest.config.ts",
+    "lint": "prettier --check package.json README.md todo.md vercel.json server.ts docs apps/android client/index.html client/src/App.tsx client/src/main.tsx client/src/index.css client/src/pages/Home.tsx client/src/pages/Login.tsx client/src/pages/YobOS.tsx client/src/components/DashboardLayout.tsx client/src/components/ManusDialog.tsx client/src/components/YobAppPlayer.tsx client/src/components/YobIcon.tsx client/src/_core/hooks/useAuth.ts client/src/lib/yob.ts server/_core/env.ts server/_core/sdk.ts server/app.ts server/app.test.ts server/db.ts server/localAuth.ts server/localAuth.test.ts server/paradox.ts server/paradox.credentials.test.ts server/vercel.entry.test.ts server/routers.ts server/routers/yob.ts server/yobStore.ts server/yob.auth.test.ts server/yob.integration.test.ts shared/const.ts shared/types.ts shared/yob.ts shared/yob.test.ts vitest.config.ts",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:paradox-live": "PARADOX_LIVE_TESTS=true vitest run server/paradox.credentials.test.ts server/yob.integration.test.ts"
@@ -49,7 +49,6 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
-    "axios": "^1.12.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -4,13 +4,13 @@
 
 ## Product surfaces
 
-| Surface          | What it provides                                                                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web Home         | A wallpaper-based personal launcher with installed-app tiles, version-update status, uninstall controls, and a full-screen sandboxed player.                                     |
-| Web Play Store   | Public discovery, searching, app details, authenticated installation, and update actions for installed applications.                                                             |
-| Publisher Studio | Authenticated publishing of standalone HTML files, immutable version uploads, release notes, deprecation, and deletion from discovery.                                           |
-| Android client   | A native Expo client with synchronized Home, Play Store, wallpaper, installs, updates, removals, publisher lifecycle controls, native sign-in, and a constrained WebView player. |
-| Cloud API        | A tRPC backend with Manus OAuth, a request-scoped Paradox encrypted SQLite database for metadata and personal state, and object storage for HTML package bytes.                  |
+| Surface          | What it provides                                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Web Home         | A wallpaper-based personal launcher with installed-app tiles, version-update status, uninstall controls, and a full-screen sandboxed player.                                                       |
+| Web Play Store   | Public discovery, searching, app details, authenticated installation, and update actions for installed applications.                                                                               |
+| Publisher Studio | Authenticated publishing of standalone HTML files, immutable version uploads, release notes, deprecation, and deletion from discovery.                                                             |
+| Android client   | A native Expo client with synchronized Home, Play Store, wallpaper, installs, updates, removals, publisher lifecycle controls, local email-and-password sign-in, and a constrained WebView player. |
+| Cloud API        | A tRPC backend with first-party email-and-password sessions, a request-scoped Paradox encrypted SQLite database for metadata and personal state, and object storage for HTML package bytes.        |
 
 ## Core lifecycle
 
@@ -29,13 +29,13 @@ When a user installs an app, YOB-OS writes a per-user installation record that p
 | Web player              | The iframe has a restrictive sandbox. It does **not** receive `allow-same-origin`, top navigation, camera, microphone, payment, or shell privileges. It includes a visible Exit control and sends no referrer.                               |
 | Android player          | The WebView has DOM storage, local-file access, universal file access, mixed content, and additional windows disabled. New top-level navigation is blocked after initial loading, while hardware Back and the Exit control return to YOB-OS. |
 | Lifecycle authorization | tRPC protected procedures enforce authentication. Publisher mutations additionally verify listing ownership.                                                                                                                                 |
-| Native sign-in          | Android uses a server-mediated OAuth handoff with a short-lived nonce, a fixed `yobos://oauth` deep link, and a bearer session token kept in platform secure storage.                                                                        |
+| Account authentication  | Web accounts use HTTP-only signed cookies. Android collects email and password locally, stores the resulting signed session token only in platform secure storage, and sends it as a bearer credential.                                      |
 
 ## Repository layout
 
 ```text
 client/                 React web client and operating-system-style interface
-server/                 tRPC routes, Paradox data layer, storage workflow, native OAuth handoff, domain service
+server/                 tRPC routes, Paradox data layer, first-party sessions, storage workflow, domain service
 shared/                 Package validation and domain constants
 apps/android/           Expo Android client
 docs/architecture.md    Product architecture and security design
@@ -44,7 +44,7 @@ docs/android-client.md  Android configuration and native player details
 
 ## Local development
 
-The cloud project uses managed environment variables for Paradox database access, OAuth, and S3-compatible storage. No manual server secret is committed to the repository. Each request pulls the latest encrypted Paradox snapshot, executes the required SQLite work, pushes writes when needed, and closes the connection; the automatic sync daemon is intentionally disabled.
+The cloud project uses managed environment variables for Paradox database access, signed first-party sessions, and S3-compatible storage. No manual server secret is committed to the repository. Each request pulls the latest encrypted Paradox snapshot, executes the required SQLite work, pushes writes when needed, and closes the connection; the automatic sync daemon is intentionally disabled.
 
 ```bash
 pnpm install
@@ -83,24 +83,20 @@ The production web bundle is ready for the managed cloud hosting workflow. Creat
 
 ### Vercel Node.js deployment
 
-This repository includes a root-level `server.ts` that exports the Express application for Vercel and a `vercel.json` build configuration. Vercel’s Express integration deploys this application as a Node.js function, preserving the tRPC, OAuth, storage-proxy, and static-client routes. Use `pnpm vercel-build` as the Vercel build command; it creates the production bundle and stages the static client assets for Vercel’s CDN.
+This repository includes a root-level `server.ts` that exports the Express application for Vercel and a `vercel.json` build configuration. Vercel’s Express integration deploys this application as a Node.js function, preserving the tRPC, first-party authentication, storage-proxy, and static-client routes. Use `pnpm vercel-build` as the Vercel build command; it creates the production bundle and stages the static client assets for Vercel’s CDN.
 
 Before a Vercel production deployment, add the following values in the Vercel project’s **Settings → Environment Variables** for the Production environment. Do not commit any secret values to this repository.
 
-| Variable                                                  | Required purpose                                                                   |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `PARADOX_GATEWAY_URL`                                     | Default Paradox gateway endpoint used for request-scoped synchronization.          |
-| `PARADOX_API_KEY`                                         | Dedicated YOB-OS API token issued by the Paradox default gateway.                  |
-| `PARADOX_PASSPHRASE`                                      | Encryption passphrase required to open the YOB-OS Paradox database.                |
-| `JWT_SECRET`                                              | Signs the authenticated application session.                                       |
-| `VITE_APP_ID`                                             | Manus OAuth application identifier, included in both the server and browser build. |
-| `OAUTH_SERVER_URL`                                        | Manus OAuth service endpoint used by the server SDK.                               |
-| `VITE_OAUTH_PORTAL_URL`                                   | Browser OAuth portal address used for sign-in redirects.                           |
-| `OWNER_OPEN_ID`                                           | Identifies the application owner for administrative access.                        |
-| `BUILT_IN_FORGE_API_URL`                                  | Server endpoint for S3-compatible storage operations.                              |
-| `BUILT_IN_FORGE_API_KEY`                                  | Server credential for S3-compatible storage operations.                            |
-| `VITE_FRONTEND_FORGE_API_URL`                             | Browser-accessible Forge endpoint used by the optional map component.              |
-| `VITE_FRONTEND_FORGE_API_KEY`                             | Browser-accessible Forge credential used by the optional map component.            |
-| `VITE_ANALYTICS_ENDPOINT` and `VITE_ANALYTICS_WEBSITE_ID` | Optional analytics configuration for the browser bundle.                           |
+| Variable                                                  | Required purpose                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `PARADOX_GATEWAY_URL`                                     | Default Paradox gateway endpoint used for request-scoped synchronization. |
+| `PARADOX_API_KEY`                                         | Dedicated YOB-OS API token issued by the Paradox default gateway.         |
+| `PARADOX_PASSPHRASE`                                      | Encryption passphrase required to open the YOB-OS Paradox database.       |
+| `JWT_SECRET`                                              | Signs the authenticated application session.                              |
+| `BUILT_IN_FORGE_API_URL`                                  | Server endpoint for S3-compatible storage operations.                     |
+| `BUILT_IN_FORGE_API_KEY`                                  | Server credential for S3-compatible storage operations.                   |
+| `VITE_FRONTEND_FORGE_API_URL`                             | Browser-accessible Forge endpoint used by the optional map component.     |
+| `VITE_FRONTEND_FORGE_API_KEY`                             | Browser-accessible Forge credential used by the optional map component.   |
+| `VITE_ANALYTICS_ENDPOINT` and `VITE_ANALYTICS_WEBSITE_ID` | Optional analytics configuration for the browser bundle.                  |
 
-The Paradox database uses the default gateway configuration. Do not configure `PARADOX_STORAGE_CHANNEL` or `PARADOX_LOG_CHANNEL`; no custom Telegram channel is required. The standard Vercel project hostname is `https://yob-os.vercel.app`; `yob-os.vercel.com` is not a supported project address. If an additional custom domain is required, attach a domain that you own through the Vercel project domain settings. After the Vercel deployment is live, set the Android client’s `EXPO_PUBLIC_API_BASE_URL` to the resulting HTTPS address and register that same callback origin with the OAuth application.
+The Paradox database uses the default gateway configuration. Do not configure `PARADOX_STORAGE_CHANNEL` or `PARADOX_LOG_CHANNEL`; no custom Telegram channel is required. The standard Vercel project hostname is `https://yob-os.vercel.app`; `yob-os.vercel.com` is not a supported project address. If an additional custom domain is required, attach a domain that you own through the Vercel project domain settings. After the Vercel deployment is live, set the Android client’s `EXPO_PUBLIC_API_BASE_URL` to the resulting HTTPS address; no OAuth callback registration is required.

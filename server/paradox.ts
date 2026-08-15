@@ -23,6 +23,7 @@ export type InsertUser = {
   name?: string | null;
   email?: string | null;
   loginMethod?: string | null;
+  passwordHash?: string | null;
   role?: UserRole;
   lastSignedIn?: Date;
 };
@@ -74,6 +75,7 @@ type RawUser = {
   name: string | null;
   email: string | null;
   login_method: string | null;
+  password_hash: string | null;
   role: UserRole;
   created_at: number;
   updated_at: number;
@@ -218,22 +220,29 @@ function schemaExists(db: ParadConnection) {
   );
 }
 
-function ensureSchema(db: ParadConnection) {
-  if (schemaExists(db)) return false;
+function hasColumn(db: ParadConnection, column: string) {
+  return rows<{ name: string }>(db, "PRAGMA table_info(users)").some(
+    row => row.name === column
+  );
+}
 
+function ensureSchema(db: ParadConnection) {
+  const schemaAlreadyExists = schemaExists(db);
   db.execute("PRAGMA foreign_keys = ON");
-  db.execute(`CREATE TABLE users (
+  if (!schemaAlreadyExists) {
+    db.execute(`CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     open_id TEXT NOT NULL UNIQUE,
     name TEXT,
     email TEXT,
     login_method TEXT,
+    password_hash TEXT,
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     last_signed_in INTEGER NOT NULL
   )`);
-  db.execute(`CREATE TABLE apps (
+    db.execute(`CREATE TABLE apps (
     id TEXT PRIMARY KEY,
     publisher_id INTEGER NOT NULL REFERENCES users(id),
     slug TEXT NOT NULL UNIQUE,
@@ -245,7 +254,7 @@ function ensureSchema(db: ParadConnection) {
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
-  db.execute(`CREATE TABLE app_versions (
+    db.execute(`CREATE TABLE app_versions (
     id TEXT PRIMARY KEY,
     app_id TEXT NOT NULL REFERENCES apps(id),
     version TEXT NOT NULL,
@@ -256,7 +265,7 @@ function ensureSchema(db: ParadConnection) {
     created_at INTEGER NOT NULL,
     UNIQUE(app_id, version)
   )`);
-  db.execute(`CREATE TABLE app_installations (
+    db.execute(`CREATE TABLE app_installations (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
     app_id TEXT NOT NULL REFERENCES apps(id),
@@ -265,20 +274,28 @@ function ensureSchema(db: ParadConnection) {
     updated_at INTEGER NOT NULL,
     UNIQUE(user_id, app_id)
   )`);
-  db.execute(`CREATE TABLE user_preferences (
+    db.execute(`CREATE TABLE user_preferences (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
     wallpaper TEXT NOT NULL DEFAULT 'aurora' CHECK (wallpaper IN ('aurora', 'glacier', 'dusk', 'void')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
-  db.execute("CREATE INDEX apps_publisher_index ON apps(publisher_id)");
-  db.execute("CREATE INDEX apps_status_index ON apps(status)");
-  db.execute("CREATE INDEX app_versions_app_index ON app_versions(app_id)");
+    db.execute("CREATE INDEX apps_publisher_index ON apps(publisher_id)");
+    db.execute("CREATE INDEX apps_status_index ON apps(status)");
+    db.execute("CREATE INDEX app_versions_app_index ON app_versions(app_id)");
+    db.execute(
+      "CREATE INDEX installations_user_index ON app_installations(user_id)"
+    );
+  }
+
+  if (!hasColumn(db, "password_hash")) {
+    db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT");
+  }
   db.execute(
-    "CREATE INDEX installations_user_index ON app_installations(user_id)"
+    "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email) WHERE email IS NOT NULL"
   );
-  return true;
+  return !schemaAlreadyExists;
 }
 
 async function resolveGatewayUrl() {
