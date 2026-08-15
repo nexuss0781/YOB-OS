@@ -31,6 +31,8 @@ export type LaunchPayload = {
   name: string;
   version: string;
   htmlUrl: string;
+  runtime: "html-game" | "native-game";
+  contentChecksum: string;
 };
 
 export type YobApi = {

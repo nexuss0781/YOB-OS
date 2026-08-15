@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
 } from "react";
@@ -1009,47 +1010,133 @@ function Settings({
 }
 
 function Player({ app, onExit }: { app: LaunchPayload; onExit: () => void }) {
+  const webRef = useRef<WebView>(null);
+  const [loading, setLoading] = useState(true);
+  const [immersive, setImmersive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
+        if (immersive) {
+          setImmersive(false);
+          return true;
+        }
         onExit();
         return true;
       }
     );
     return () => subscription.remove();
-  }, [onExit]);
+  }, [immersive, onExit]);
+
+  const handleRuntimeMessage = (data: string) => {
+    try {
+      const message = JSON.parse(data) as {
+        type?: string;
+        action?: string;
+      };
+      if (message.type !== "yob-runtime") return;
+      if (message.action === "exit") onExit();
+      if (message.action === "fullscreen") setImmersive(true);
+      if (message.action === "windowed") setImmersive(false);
+    } catch {
+      // Ignore arbitrary page messages; only the YOB runtime protocol is trusted.
+    }
+  };
+
+  const reload = () => {
+    setError(null);
+    setLoading(true);
+    webRef.current?.reload();
+  };
+
   return (
     <SafeAreaProvider>
-      <SafeAreaView
-        style={styles.screen}
-        edges={["top", "left", "right", "bottom"]}
-      >
-        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-        <View style={local.playerHeader}>
-          <Pressable onPress={onExit} style={local.backButton}>
-            <Feather name="arrow-left" size={20} color={colors.text} />
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={local.appName}>
-              {app.name}
-            </Text>
-            <Text style={local.cardSubtle}>App session</Text>
-          </View>
-          <Action label="Close" icon="x" onPress={onExit} small />
-        </View>
+      <SafeAreaView style={local.gamePlayer} edges={[]}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={colors.bg}
+          hidden={immersive}
+        />
         <WebView
+          ref={webRef}
           source={{ uri: resolveUrl(app.htmlUrl) }}
           javaScriptEnabled
           domStorageEnabled
+          cacheEnabled
+          cacheMode="LOAD_CACHE_ELSE_NETWORK"
+          androidLayerType="hardware"
+          mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo
           javaScriptCanOpenWindowsAutomatically={false}
           setSupportMultipleWindows={false}
           allowFileAccess={false}
           allowUniversalAccessFromFileURLs={false}
           mixedContentMode="never"
           originWhitelist={["https://*"]}
-          style={{ flex: 1, backgroundColor: colors.white }}
+          injectedJavaScriptObject={{
+            yobRuntime: { version: 1, appId: app.appId, runtime: app.runtime },
+          }}
+          onMessage={event => handleRuntimeMessage(event.nativeEvent.data)}
+          onLoadStart={() => {
+            setError(null);
+            setLoading(true);
+          }}
+          onLoadEnd={() => setLoading(false)}
+          onError={event => {
+            setLoading(false);
+            setError(event.nativeEvent.description || "Unable to load this game.");
+          }}
+          onHttpError={event => {
+            if (event.nativeEvent.statusCode >= 400) {
+              setLoading(false);
+              setError(`Game server returned ${event.nativeEvent.statusCode}.`);
+            }
+          }}
+          onRenderProcessGone={() => {
+            setLoading(false);
+            setError("The game renderer stopped unexpectedly.");
+          }}
+          style={local.gameWebView}
         />
+        {loading && !error ? (
+          <View style={local.gameLoading} pointerEvents="none">
+            <ActivityIndicator color={colors.cyan} size="large" />
+            <Text style={local.gameLoadingText}>Starting {app.name}…</Text>
+          </View>
+        ) : null}
+        {error ? (
+          <View style={local.gameError}>
+            <Feather name="alert-triangle" size={28} color={colors.danger} />
+            <Text style={local.gameErrorTitle}>Game could not start</Text>
+            <Text style={local.gameErrorText}>{error}</Text>
+            <View style={local.gameErrorActions}>
+              <Action label="Retry" icon="refresh-cw" onPress={reload} small />
+              <Action label="Exit" icon="x" onPress={onExit} small />
+            </View>
+          </View>
+        ) : null}
+        {!immersive && !error ? (
+          <View style={local.playerOverlay}>
+            <Pressable onPress={onExit} style={local.backButton}>
+              <Feather name="arrow-left" size={20} color={colors.text} />
+            </Pressable>
+            <View style={local.playerOverlayTitle} pointerEvents="none">
+              <Text numberOfLines={1} style={local.appName}>
+                {app.name}
+              </Text>
+              <Text style={local.cardSubtle}>Native game surface</Text>
+            </View>
+            <Pressable
+              onPress={() => setImmersive(true)}
+              style={local.backButton}
+              accessibilityLabel="Enter fullscreen"
+            >
+              <Feather name="maximize" size={19} color={colors.text} />
+            </Pressable>
+          </View>
+        ) : null}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -1613,6 +1700,53 @@ const local = StyleSheet.create({
   actionFull: { alignSelf: "stretch", marginTop: 19 },
   actionText: { color: colors.text, fontSize: 12, fontWeight: "800" },
   actionTextSmall: { fontSize: 11 },
+  gamePlayer: { flex: 1, backgroundColor: colors.ink },
+  gameWebView: { flex: 1, backgroundColor: colors.ink },
+  playerOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 66,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(5, 5, 13, 0.86)",
+  },
+  playerOverlayTitle: { flex: 1 },
+  gameLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink,
+  },
+  gameLoadingText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 13,
+  },
+  gameError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 28,
+    backgroundColor: colors.bg,
+  },
+  gameErrorTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 12,
+  },
+  gameErrorText: {
+    color: colors.muted,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  gameErrorActions: { flexDirection: "row", gap: 8, marginTop: 18 },
   playerHeader: {
     minHeight: 66,
     paddingHorizontal: 16,

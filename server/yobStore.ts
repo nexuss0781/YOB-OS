@@ -589,6 +589,8 @@ export async function launchInstalledApp(userId: number, appId: string) {
       name: app.name,
       version: installedVersion.version,
       htmlUrl: stored.url,
+      runtime: "html-game" as const,
+      contentChecksum: installedVersion.checksum,
     };
   });
 }
