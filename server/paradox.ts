@@ -125,7 +125,9 @@ type RawPreference = {
 
 const PARADOX_PROJECT = "yob-os";
 const PARADOX_DATABASE = "yob-os";
-const PARADOX_DB_PATH = path.join(os.tmpdir(), "yob-os-paradox", "yob-os.db");
+const PARADOX_RUNTIME_DIR = path.join(os.tmpdir(), "yob-os-paradox");
+const PARADOX_DB_PATH = path.join(PARADOX_RUNTIME_DIR, "yob-os.db");
+process.env.PARADOX_HOME ??= path.join(PARADOX_RUNTIME_DIR, "config");
 const FALLBACK_GATEWAY = "https://paradox-db.onrender.com/v1";
 const ACTIVE_GATEWAY_RESOLVER =
   "https://paradox-domain.onrender.com/active-domain.json";
