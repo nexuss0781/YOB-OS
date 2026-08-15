@@ -3,11 +3,5 @@
   "framework": null,
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm vercel-build",
-  "outputDirectory": "public",
-  "rewrites": [
-    {
-      "source": "/api/trpc/:trpcPath*",
-      "destination": "/api/trpc?trpcPath=:trpcPath*"
-    }
-  ]
+  "outputDirectory": "public"
 }
