@@ -3,11 +3,21 @@
     "name": "YOB-OS",
     "slug": "yob-os",
     "version": "1.0.0",
+    "icon": "./assets/yob-os-icon.png",
     "orientation": "portrait",
     "scheme": "yobos",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/yob-os-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#06111F"
+    },
     "android": {
       "package": "space.manus.yobos",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/yob-os-icon.png",
+        "backgroundColor": "#06111F"
+      },
       "edgeToEdgeEnabled": true
     },
     "extra": {
