@@ -3,10 +3,11 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Vercel entrypoint", () => {
-  it("exports the Express app and keeps static output explicit", () => {
+  it("keeps the UI static and routes tRPC through a dedicated function", () => {
     const root = resolve(process.cwd());
     const packagePath = resolve(root, "package.json");
     const rootEntryPath = resolve(root, "server.ts");
+    const trpcEntryPath = resolve(root, "api/trpc.ts");
     const apiDirectoryPath = resolve(root, "api");
     const vercelConfigPath = resolve(root, "vercel.json");
     const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as {
@@ -15,15 +16,24 @@ describe("Vercel entrypoint", () => {
     const vercelConfig = JSON.parse(readFileSync(vercelConfigPath, "utf8")) as {
       framework?: string | null;
       outputDirectory?: string;
+      rewrites?: Array<{ source?: string; destination?: string }>;
     };
 
     expect(manifest.main).toBe("server.ts");
     expect(existsSync(rootEntryPath)).toBe(true);
+    expect(existsSync(trpcEntryPath)).toBe(true);
+    expect(existsSync(apiDirectoryPath)).toBe(true);
     expect(readFileSync(rootEntryPath, "utf8")).toContain(
       "export default createApp();",
     );
-    expect(existsSync(apiDirectoryPath)).toBe(false);
+    expect(readFileSync(trpcEntryPath, "utf8")).toContain(
+      "trpcPath",
+    );
     expect(vercelConfig.framework).toBeNull();
     expect(vercelConfig.outputDirectory).toBe("public");
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/api/trpc/:trpcPath*",
+      destination: "/api/trpc?trpcPath=:trpcPath*",
+    });
   });
 });
