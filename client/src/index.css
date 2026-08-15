@@ -1,4 +1,82 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Manrope", sans-serif;
+  --font-mono: "DM Mono", monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply min-h-screen bg-[#090914] font-sans text-white antialiased;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+}
+
+.yob-nav-item {
+  @apply flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-white/45 transition duration-150 hover:bg-white/[.045] hover:text-white;
+}
+.yob-nav-item-active {
+  @apply bg-violet-300/12 text-violet-100 shadow-[inset_0_0_0_1px_rgba(196,181,253,.11)];
+}
+.yob-button {
+  @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition active:scale-[.97];
+}
+.yob-button-secondary {
+  @apply border border-white/15 bg-white/[.06] text-white hover:bg-white/[.12];
+}
+.home-surface {
+  @apply relative overflow-hidden rounded-[30px] border border-white/10 shadow-[0_22px_90px_rgba(0,0,0,.35)];
+}
+.wallpaper-aurora {
+  background:
+    radial-gradient(circle at 14% 20%, #16c6c2 0%, transparent 28%),
+    radial-gradient(circle at 72% 25%, #6e55d5 0%, transparent 32%),
+    linear-gradient(140deg, #0b2a3c 0%, #14122f 54%, #3e145b 100%);
+}
+.wallpaper-glacier {
+  background:
+    radial-gradient(circle at 80% 12%, #b4f5ff 0%, transparent 27%),
+    radial-gradient(circle at 8% 78%, #398bce 0%, transparent 36%),
+    linear-gradient(145deg, #0d253c, #26436a 54%, #122031);
+}
+.wallpaper-dusk {
+  background:
+    radial-gradient(circle at 79% 14%, #fdcc9d 0%, transparent 26%),
+    radial-gradient(circle at 28% 75%, #bc4b7e 0%, transparent 36%),
+    linear-gradient(145deg, #29132b, #692f55 54%, #db754d);
+}
+.wallpaper-void {
+  background:
+    radial-gradient(circle at 18% 70%, #22264a 0%, transparent 28%),
+    radial-gradient(circle at 80% 18%, #40285b 0%, transparent 30%),
+    linear-gradient(145deg, #05050e, #111020 58%, #141028);
+}
+.yob-icon {
+  @apply grid shrink-0 place-items-center rounded-2xl border border-white/15 bg-gradient-to-br from-white/25 to-white/[.05] shadow-[0_12px_28px_rgba(0,0,0,.25)] backdrop-blur-sm;
+}
+.store-hero {
+  @apply flex flex-col justify-between gap-4 rounded-3xl border border-white/10 bg-[linear-gradient(110deg,rgba(115,75,220,.25),rgba(12,12,28,.25)_45%,rgba(18,194,196,.13))] p-6 sm:flex-row sm:items-center;
+}
+.app-card {
+  @apply rounded-3xl border border-white/10 bg-white/[.035] p-5 shadow-[0_10px_36px_rgba(0,0,0,.12)] transition duration-200 hover:-translate-y-0.5 hover:border-violet-200/25 hover:bg-white/[.055];
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .app-card,
+  .yob-nav-item,
+  .yob-button {
+    transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -94,7 +172,7 @@
   --muted: oklch(0.274 0.006 286.033);
   --muted-foreground: oklch(0.705 0.015 286.067);
   --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
+  --accent-foreground: oklch(0.92 0.005 65);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 10%);
@@ -108,7 +186,7 @@
   --sidebar: oklch(0.21 0.006 285.885);
   --sidebar-foreground: oklch(0.85 0.005 65);
   --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.488 0.243 264.376);
 }

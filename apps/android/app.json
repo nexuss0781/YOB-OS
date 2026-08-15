@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "YOB-OS",
+    "slug": "yob-os",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "yobos",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "space.manus.yobos",
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "apiBaseUrl": "${EXPO_PUBLIC_API_BASE_URL}"
+    }
+  }
+}
