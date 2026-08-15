@@ -13,6 +13,7 @@ describe("Vercel entrypoint", () => {
       main?: string;
     };
     const vercelConfig = JSON.parse(readFileSync(vercelConfigPath, "utf8")) as {
+      framework?: string | null;
       outputDirectory?: string;
     };
 
@@ -22,6 +23,7 @@ describe("Vercel entrypoint", () => {
       "export default createApp();",
     );
     expect(existsSync(apiDirectoryPath)).toBe(false);
-    expect(vercelConfig.outputDirectory).toBe("public");
+    expect(vercelConfig.framework).toBeUndefined();
+    expect(vercelConfig.outputDirectory).toBeUndefined();
   });
 });
