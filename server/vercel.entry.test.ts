@@ -14,6 +14,7 @@ describe("Vercel entrypoint", () => {
     const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as {
       main?: string;
       scripts?: { "vercel-build"?: string };
+      dependencies?: Record<string, string>;
     };
     const vercelConfig = JSON.parse(readFileSync(vercelConfigPath, "utf8")) as {
       framework?: string | null;
@@ -22,6 +23,7 @@ describe("Vercel entrypoint", () => {
     };
 
     expect(manifest.main).toBe("server.ts");
+    expect(manifest.dependencies?.["sql.js"]).toBe("1.14.2");
     expect(manifest.scripts?.["vercel-build"]).toContain(
       "--outfile=api/trpc.js",
     );
@@ -30,6 +32,9 @@ describe("Vercel entrypoint", () => {
     );
     expect(manifest.scripts?.["vercel-build"]).toContain(
       "--external:express",
+    );
+    expect(manifest.scripts?.["vercel-build"]).toContain(
+      "--external:sql.js/dist/sql-asm.js",
     );
     expect(existsSync(rootEntryPath)).toBe(true);
     expect(existsSync(trpcSourcePath)).toBe(true);
