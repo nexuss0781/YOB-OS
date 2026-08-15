@@ -1,14 +1,21 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-describe("Vercel Node entrypoint", () => {
-  it("declares the exported Express server as the package entry module", () => {
-    const packagePath = resolve(process.cwd(), "package.json");
+describe("Vercel entrypoint", () => {
+  it("keeps the Node handler under the API route instead of the static root", () => {
+    const root = resolve(process.cwd());
+    const packagePath = resolve(root, "package.json");
+    const apiEntryPath = resolve(root, "api/index.ts");
+    const rootEntryPath = resolve(root, "server.ts");
     const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as {
       main?: string;
     };
 
-    expect(manifest.main).toBe("server.ts");
+    expect(manifest.main).toBeUndefined();
+    expect(existsSync(rootEntryPath)).toBe(false);
+    expect(readFileSync(apiEntryPath, "utf8")).toContain(
+      'export default createApp();',
+    );
   });
 });
