@@ -49,5 +49,13 @@ describe("Vercel entrypoint", () => {
       source: "/api/trpc/:trpcPath*",
       destination: "/api/trpc?trpcPath=:trpcPath*",
     });
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/manus-storage/:storagePath*",
+      destination: "/api/trpc?storagePath=:storagePath*",
+    });
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/(.*)",
+      destination: "/index.html",
+    });
   });
 });

@@ -7366,7 +7366,9 @@ import path4 from "node:path";
 import os2 from "node:os";
 var PARADOX_PROJECT = "yob-os";
 var PARADOX_DATABASE = "yob-os";
-var PARADOX_DB_PATH = path4.join(os2.tmpdir(), "yob-os-paradox", "yob-os.db");
+var PARADOX_RUNTIME_DIR = path4.join(os2.tmpdir(), "yob-os-paradox");
+var PARADOX_DB_PATH = path4.join(PARADOX_RUNTIME_DIR, "yob-os.db");
+process.env.PARADOX_HOME ??= path4.join(PARADOX_RUNTIME_DIR, "config");
 var FALLBACK_GATEWAY = "https://paradox-db.onrender.com/v1";
 var ACTIVE_GATEWAY_RESOLVER = "https://paradox-domain.onrender.com/active-domain.json";
 var cachedGatewayUrl = null;
@@ -7427,10 +7429,19 @@ function mapInstallation(row) {
   };
 }
 function mapPreference(row) {
+  let appOrder = [];
+  try {
+    const parsed = JSON.parse(row.app_order_json ?? "[]");
+    appOrder = Array.isArray(parsed) ? parsed.filter((value) => typeof value === "string") : [];
+  } catch {
+    appOrder = [];
+  }
   return {
     id: row.id,
     userId: Number(row.user_id),
     wallpaper: row.wallpaper,
+    wallpaperPhotoKey: row.wallpaper_photo_key,
+    appOrder,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at)
   };
@@ -7444,8 +7455,8 @@ function schemaExists(db) {
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
   ).length > 0;
 }
-function hasColumn(db, column) {
-  return rows(db, "PRAGMA table_info(users)").some(
+function hasColumn(db, table, column) {
+  return rows(db, `PRAGMA table_info(${table})`).some(
     (row) => row.name === column
   );
 }
@@ -7501,6 +7512,8 @@ function ensureSchema(db) {
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
     wallpaper TEXT NOT NULL DEFAULT 'aurora' CHECK (wallpaper IN ('aurora', 'glacier', 'dusk', 'void')),
+    wallpaper_photo_key TEXT,
+    app_order_json TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
@@ -7511,8 +7524,18 @@ function ensureSchema(db) {
       "CREATE INDEX installations_user_index ON app_installations(user_id)"
     );
   }
-  if (!hasColumn(db, "password_hash")) {
+  if (!hasColumn(db, "users", "password_hash")) {
     db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT");
+  }
+  if (!hasColumn(db, "user_preferences", "wallpaper_photo_key")) {
+    db.execute(
+      "ALTER TABLE user_preferences ADD COLUMN wallpaper_photo_key TEXT"
+    );
+  }
+  if (!hasColumn(db, "user_preferences", "app_order_json")) {
+    db.execute(
+      "ALTER TABLE user_preferences ADD COLUMN app_order_json TEXT NOT NULL DEFAULT '[]'"
+    );
   }
   db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email) WHERE email IS NOT NULL"
@@ -20486,6 +20509,9 @@ var systemRouter = router({
 // shared/yob.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 var MAX_HTML_APP_BYTES = 1024 * 1024;
+var MAX_WALLPAPER_IMAGE_BYTES = 5 * 1024 * 1024;
+var MAX_APP_ICON_BYTES = 512 * 1024;
+var DEFAULT_APP_ICON = "browser";
 var WALLPAPERS = ["aurora", "glacier", "dusk", "void"];
 var APP_STATUSES = ["active", "deprecated", "deleted"];
 function decodeAndValidateHtml(base643) {
@@ -20517,6 +20543,48 @@ function decodeAndValidateHtml(base643) {
     size: bytes.byteLength
   };
 }
+function decodeAndValidateAppIcon(base643, mimeType) {
+  if (!base643 || base643.length > Math.ceil(MAX_APP_ICON_BYTES * 1.4) || !/^[A-Za-z0-9+/]+={0,2}$/.test(base643)) {
+    throw new Error("Choose a JPG, PNG, or WebP icon under 512 KiB.");
+  }
+  const bytes = Buffer.from(base643, "base64");
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_APP_ICON_BYTES) {
+    throw new Error("Choose a JPG, PNG, or WebP icon under 512 KiB.");
+  }
+  const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const jpeg = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+  const webp = bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  const valid = mimeType === "image/png" && png || mimeType === "image/jpeg" && jpeg || mimeType === "image/webp" && webp;
+  if (!valid) {
+    throw new Error("The selected icon does not match its declared format.");
+  }
+  return {
+    bytes,
+    mimeType,
+    extension: mimeType === "image/jpeg" ? "jpg" : mimeType === "image/png" ? "png" : "webp"
+  };
+}
+function decodeAndValidateWallpaperImage(base643, mimeType) {
+  if (!base643 || base643.length > Math.ceil(MAX_WALLPAPER_IMAGE_BYTES * 1.4) || !/^[A-Za-z0-9+/]+={0,2}$/.test(base643)) {
+    throw new Error("Choose a JPG, PNG, or WebP image under 5 MiB.");
+  }
+  const bytes = Buffer.from(base643, "base64");
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_WALLPAPER_IMAGE_BYTES) {
+    throw new Error("Choose a JPG, PNG, or WebP image under 5 MiB.");
+  }
+  const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const jpeg = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+  const webp = bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  const valid = mimeType === "image/png" && png || mimeType === "image/jpeg" && jpeg || mimeType === "image/webp" && webp;
+  if (!valid) {
+    throw new Error("The selected image does not match its declared format.");
+  }
+  return {
+    bytes,
+    mimeType,
+    extension: mimeType === "image/jpeg" ? "jpg" : mimeType === "image/png" ? "png" : "webp"
+  };
+}
 function createAppId() {
   return randomUUID2();
 }
@@ -20529,6 +20597,12 @@ function makeAppSlug(name) {
 }
 function makeHtmlStorageKey(appId, versionId) {
   return `yob-os/apps/${appId}/versions/${versionId}.html`;
+}
+function makeAppIconStorageKey(appId, extension) {
+  return `yob-os/apps/${appId}/icon.${extension}`;
+}
+function makeWallpaperStorageKey(userId, extension) {
+  return `yob-os/users/${userId}/wallpapers/${randomUUID2()}.${extension}`;
 }
 
 // server/storage.ts
@@ -20686,6 +20760,13 @@ async function listPublisherApps(publisherId) {
 }
 async function publishApp(input) {
   const packageData = decodeAndValidateHtml(input.htmlBase64);
+  if (Boolean(input.iconBase64) !== Boolean(input.iconMimeType)) {
+    fail(
+      "BAD_REQUEST",
+      "Icon uploads must include both image data and MIME type."
+    );
+  }
+  const iconPackage = input.iconBase64 && input.iconMimeType ? decodeAndValidateAppIcon(input.iconBase64, input.iconMimeType) : null;
   const appId = createAppId();
   const versionId = createVersionId();
   const stored = await storagePut(
@@ -20693,6 +20774,14 @@ async function publishApp(input) {
     packageData.bytes,
     "text/html; charset=utf-8"
   );
+  const iconStored = iconPackage ? await storagePut(
+    makeAppIconStorageKey(appId, iconPackage.extension),
+    iconPackage.bytes,
+    iconPackage.mimeType
+  ) : null;
+  const appName = input.name.trim();
+  const appDescription = input.description?.trim() || `A standalone HTML app published to YOB-OS.`;
+  const appIcon = iconStored?.url || input.icon?.trim() || DEFAULT_APP_ICON;
   const now = Date.now();
   await withParadox(
     (db) => inTransaction(db, () => {
@@ -20704,9 +20793,9 @@ async function publishApp(input) {
           appId,
           input.publisherId,
           makeAppSlug(input.name),
-          input.name.trim(),
-          input.description.trim(),
-          input.icon.trim(),
+          appName,
+          appDescription,
+          appIcon,
           versionId,
           now,
           now
@@ -20825,30 +20914,42 @@ async function homeSnapshot(userId) {
       installedVersions.map((version2) => [version2.id, version2])
     );
     const current = await currentVersions(db, listings);
+    const preferenceView = preference ? mapPreference(preference) : null;
+    const apps = installations.flatMap((installation) => {
+      const listing = listingById.get(installation.appId);
+      const installedVersion = installedVersionById.get(
+        installation.installedVersionId
+      );
+      if (!listing || !installedVersion || listing.status === "deleted")
+        return [];
+      return [
+        {
+          ...listingView(
+            listing,
+            current.get(listing.currentVersionId ?? ""),
+            installation.installedVersionId
+          ),
+          installedVersion: {
+            id: installedVersion.id,
+            version: installedVersion.version
+          },
+          canUpdate: listing.status === "active" && installation.installedVersionId !== listing.currentVersionId
+        }
+      ];
+    });
+    const orderIndex = new Map(
+      (preferenceView?.appOrder ?? []).map((appId, index) => [appId, index])
+    );
+    apps.sort((left, right) => {
+      const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex || left.name.localeCompare(right.name);
+    });
+    const wallpaperPhotoUrl = preferenceView?.wallpaperPhotoKey ? (await storageGet(preferenceView.wallpaperPhotoKey)).url : null;
     return {
-      wallpaper: preference ? mapPreference(preference).wallpaper : "aurora",
-      apps: installations.flatMap((installation) => {
-        const listing = listingById.get(installation.appId);
-        const installedVersion = installedVersionById.get(
-          installation.installedVersionId
-        );
-        if (!listing || !installedVersion || listing.status === "deleted")
-          return [];
-        return [
-          {
-            ...listingView(
-              listing,
-              current.get(listing.currentVersionId ?? ""),
-              installation.installedVersionId
-            ),
-            installedVersion: {
-              id: installedVersion.id,
-              version: installedVersion.version
-            },
-            canUpdate: listing.status === "active" && installation.installedVersionId !== listing.currentVersionId
-          }
-        ];
-      })
+      wallpaper: preferenceView?.wallpaper ?? "aurora",
+      wallpaperPhotoUrl,
+      apps
     };
   });
 }
@@ -20863,14 +20964,85 @@ async function setWallpaper(userId, wallpaper) {
       );
       if (preference) {
         db.execute(
-          "UPDATE user_preferences SET wallpaper = ?, updated_at = ? WHERE user_id = ?",
+          "UPDATE user_preferences SET wallpaper = ?, wallpaper_photo_key = NULL, updated_at = ? WHERE user_id = ?",
           [wallpaper, now, userId]
         );
       } else {
         db.execute(
-          `INSERT INTO user_preferences (id, user_id, wallpaper, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, '[]', ?, ?)`,
           [createAppId(), userId, wallpaper, now, now]
+        );
+      }
+    },
+    { write: true }
+  );
+  return homeSnapshot(userId);
+}
+async function setWallpaperPhoto(input) {
+  const image = decodeAndValidateWallpaperImage(input.base64, input.mimeType);
+  const stored = await storagePut(
+    makeWallpaperStorageKey(input.userId, image.extension),
+    image.bytes,
+    image.mimeType
+  );
+  const now = Date.now();
+  await withParadox(
+    (db) => {
+      const preference = one(
+        db,
+        "SELECT id FROM user_preferences WHERE user_id = ? LIMIT 1",
+        [input.userId]
+      );
+      if (preference) {
+        db.execute(
+          "UPDATE user_preferences SET wallpaper_photo_key = ?, updated_at = ? WHERE user_id = ?",
+          [stored.key, now, input.userId]
+        );
+      } else {
+        db.execute(
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, 'aurora', ?, '[]', ?, ?)`,
+          [createAppId(), input.userId, stored.key, now, now]
+        );
+      }
+    },
+    { write: true }
+  );
+  return homeSnapshot(input.userId);
+}
+async function setAppOrder(userId, appIds) {
+  const uniqueAppIds = appIds.filter(
+    (appId, index) => appIds.indexOf(appId) === index
+  );
+  const now = Date.now();
+  await withParadox(
+    (db) => {
+      const installedIds = new Set(
+        rows(
+          db,
+          "SELECT app_id FROM app_installations WHERE user_id = ?",
+          [userId]
+        ).map((row) => row.app_id)
+      );
+      if (uniqueAppIds.some((appId) => !installedIds.has(appId))) {
+        fail("BAD_REQUEST", "App order can only include installed apps.");
+      }
+      const preference = one(
+        db,
+        "SELECT id FROM user_preferences WHERE user_id = ? LIMIT 1",
+        [userId]
+      );
+      if (preference) {
+        db.execute(
+          "UPDATE user_preferences SET app_order_json = ?, updated_at = ? WHERE user_id = ?",
+          [JSON.stringify(uniqueAppIds), now, userId]
+        );
+      } else {
+        db.execute(
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, 'aurora', NULL, ?, ?, ?)`,
+          [createAppId(), userId, JSON.stringify(uniqueAppIds), now, now]
         );
       }
     },
@@ -20974,11 +21146,18 @@ async function launchInstalledApp(userId, appId) {
 
 // server/routers/yob.ts
 var appIdInput = external_exports.object({ appId: external_exports.string().uuid() });
+var versionInput = external_exports.string().trim().min(1).max(32).regex(/^v?\d+(?:\.\d+){0,2}(?:[-+][a-zA-Z0-9.-]+)?$/);
 var htmlAppInput = external_exports.object({
   htmlBase64: external_exports.string().min(16),
-  version: external_exports.string().trim().min(1).max(32).regex(/^v?\d+(?:\.\d+){0,2}(?:[-+][a-zA-Z0-9.-]+)?$/),
+  version: versionInput.optional().default("1.0.0"),
   releaseNotes: external_exports.string().trim().max(2e3).optional()
 });
+var optionalIconFields = {
+  icon: external_exports.string().trim().min(1).max(32).optional(),
+  iconBase64: external_exports.string().min(16).optional(),
+  iconMimeType: external_exports.enum(["image/jpeg", "image/png", "image/webp"]).optional()
+};
+var hasValidIconPair = (value) => Boolean(value.iconBase64) === Boolean(value.iconMimeType);
 var yobRouter = router({
   store: router({
     list: publicProcedure.input(
@@ -20990,6 +21169,15 @@ var yobRouter = router({
   home: router({
     snapshot: protectedProcedure.query(({ ctx }) => homeSnapshot(ctx.user.id)),
     setWallpaper: protectedProcedure.input(external_exports.object({ wallpaper: external_exports.enum(WALLPAPERS) })).mutation(({ ctx, input }) => setWallpaper(ctx.user.id, input.wallpaper)),
+    setWallpaperPhoto: protectedProcedure.input(
+      external_exports.object({
+        base64: external_exports.string().min(16).max(7e6),
+        mimeType: external_exports.enum(["image/jpeg", "image/png", "image/webp"])
+      })
+    ).mutation(
+      ({ ctx, input }) => setWallpaperPhoto({ userId: ctx.user.id, ...input })
+    ),
+    setAppOrder: protectedProcedure.input(external_exports.object({ appIds: external_exports.array(external_exports.string().uuid()).max(500) })).mutation(({ ctx, input }) => setAppOrder(ctx.user.id, input.appIds)),
     update: protectedProcedure.input(appIdInput).mutation(({ ctx, input }) => applyUpdate(ctx.user.id, input.appId)),
     uninstall: protectedProcedure.input(appIdInput).mutation(({ ctx, input }) => uninstallApp(ctx.user.id, input.appId)),
     launch: protectedProcedure.input(appIdInput).query(({ ctx, input }) => launchInstalledApp(ctx.user.id, input.appId))
@@ -20999,9 +21187,12 @@ var yobRouter = router({
     create: protectedProcedure.input(
       htmlAppInput.extend({
         name: external_exports.string().trim().min(2).max(96),
-        description: external_exports.string().trim().min(8).max(2e3),
-        icon: external_exports.string().trim().min(1).max(32)
-      })
+        description: external_exports.string().trim().min(8).max(2e3).optional(),
+        ...optionalIconFields
+      }).refine(
+        hasValidIconPair,
+        "Icon uploads must include both image data and MIME type."
+      )
     ).mutation(
       ({ ctx, input }) => publishApp({ publisherId: ctx.user.id, ...input })
     ),
@@ -21168,6 +21359,12 @@ function createApp() {
 // server/vercel-trpc.ts
 var app = createApp();
 function handler(req, res) {
+  const storagePath = req.query?.storagePath;
+  const storageKey = Array.isArray(storagePath) ? storagePath[0] : storagePath;
+  if (storageKey) {
+    req.url = `/manus-storage/${storageKey}`;
+    return app(req, res);
+  }
   const procedurePath = req.query?.trpcPath;
   const path5 = Array.isArray(procedurePath) ? procedurePath[0] : procedurePath;
   if (path5) {

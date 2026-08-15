@@ -8,6 +8,15 @@ type VercelRequest = Request & {
 };
 
 export default function handler(req: VercelRequest, res: Response) {
+  const storagePath = req.query?.storagePath;
+  const storageKey = Array.isArray(storagePath)
+    ? storagePath[0]
+    : storagePath;
+  if (storageKey) {
+    req.url = `/manus-storage/${storageKey}`;
+    return app(req, res);
+  }
+
   const procedurePath = req.query?.trpcPath;
   const path = Array.isArray(procedurePath) ? procedurePath[0] : procedurePath;
 

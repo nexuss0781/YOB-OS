@@ -8,6 +8,14 @@
     {
       "source": "/api/trpc/:trpcPath*",
       "destination": "/api/trpc?trpcPath=:trpcPath*"
+    },
+    {
+      "source": "/manus-storage/:storagePath*",
+      "destination": "/api/trpc?storagePath=:storagePath*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
