@@ -68,4 +68,4 @@
 - [x] Redesign the Android home as a focused app launcher, moving wallpaper and discovery controls to a separate Explore destination with navigation clear of system controls.
 - [x] Add a professional Android download entry point to the YOB-OS website without platform-hosting references in user-facing copy.
 - [x] Publish the signed Android APK as a GitHub Release and link the released artifact from the YOB-OS website.
-- [ ] Build, validate, and deliver the refined operating-system APK.
+- [x] Build, validate, and deliver the refined operating-system APK.
