@@ -2,7 +2,7 @@
   "expo": {
     "name": "YOB-OS",
     "slug": "yob-os",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "icon": "./assets/yob-os-icon.png",
     "orientation": "portrait",
     "scheme": "yobos",
