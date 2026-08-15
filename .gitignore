@@ -15,6 +15,9 @@ public/
 .env.test.local
 .env.production.local
 
+# Expo local state
+.expo/
+
 # IDE and editor files
 .vscode/
 .idea/
