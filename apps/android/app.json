@@ -12,8 +12,17 @@
       "resizeMode": "contain",
       "backgroundColor": "#06111F"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow YOB-OS to select a photo for your personal wallpaper."
+        }
+      ]
+    ],
     "android": {
       "package": "space.manus.yobos",
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/yob-os-icon.png",
         "backgroundColor": "#06111F"

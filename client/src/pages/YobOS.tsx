@@ -12,8 +12,11 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import {
   Archive,
+  ArrowLeft,
+  ArrowRight,
   Boxes,
   Download,
+  GripVertical,
   Home,
   Loader2,
   LogIn,
@@ -23,11 +26,12 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  Smartphone,
   Store,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -52,8 +56,8 @@ const WALLPAPERS = [
 ] as const;
 
 const nav = [
-  { id: "home" as const, label: "Home", icon: Home },
-  { id: "store" as const, label: "Play Store", icon: Store },
+  { id: "home" as const, label: "Apps", icon: Home },
+  { id: "store" as const, label: "Explore", icon: Store },
   { id: "studio" as const, label: "Studio", icon: Settings2 },
 ];
 
@@ -62,6 +66,8 @@ export default function YobOS() {
   const [search, setSearch] = useState("");
   const [player, setPlayer] = useState<PlayerApp | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [arranging, setArranging] = useState(false);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [, setLocation] = useLocation();
   const { user, loading: authLoading, isAuthenticated, logout } = useAuth();
   const utils = trpc.useUtils();
@@ -100,6 +106,12 @@ export default function YobOS() {
   const setWallpaper = trpc.yob.home.setWallpaper.useMutation({
     onSuccess: refreshPersonalState,
   });
+  const setWallpaperPhoto = trpc.yob.home.setWallpaperPhoto.useMutation({
+    onSuccess: refreshPersonalState,
+  });
+  const setAppOrder = trpc.yob.home.setAppOrder.useMutation({
+    onSuccess: refreshPersonalState,
+  });
   const changeStatus = trpc.yob.publisher.setStatus.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -129,6 +141,39 @@ export default function YobOS() {
     }
     action();
   };
+  const uploadWallpaperPhoto = async (file: File) => {
+    if (!isAuthenticated) return guarded(() => undefined);
+    if (
+      !file.type.match(/^image\/(jpeg|png|webp)$/) ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      toast.error("Choose a JPG, PNG, or WebP image under 5 MiB.");
+      return;
+    }
+    try {
+      setWallpaperPhoto.mutate({
+        base64: await fileAsBase64(file),
+        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp",
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to read that image."
+      );
+    }
+  };
+  const moveApp = (appId: string, direction: -1 | 1) => {
+    const apps = homeQuery.data?.apps ?? [];
+    const currentIndex = apps.findIndex(app => app.id === appId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= apps.length) return;
+    const next = [...apps];
+    const [moved] = next.splice(currentIndex, 1);
+    next.splice(nextIndex, 0, moved);
+    setAppOrder.mutate(
+      { appIds: next.map(app => app.id) },
+      { onError: error => toast.error(error.message) }
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#090914] text-white selection:bg-violet-400/40">
@@ -141,7 +186,7 @@ export default function YobOS() {
             <div>
               <p className="text-sm font-black tracking-[0.18em]">YOB-OS</p>
               <p className="mt-0.5 text-[10px] tracking-[0.18em] text-violet-200/55">
-                PERSONAL CLOUD
+                YOUR APP SPACE
               </p>
             </div>
           </div>
@@ -229,7 +274,7 @@ export default function YobOS() {
                   ? "Discover apps"
                   : "Publisher controls"}
             </span>{" "}
-            <span className="mx-2">/</span> cloud-synced
+            <span className="mx-2">/</span> your setup
           </div>
           <div className="flex items-center gap-3">
             {!isAuthenticated && !authLoading && (
@@ -273,15 +318,12 @@ export default function YobOS() {
                 { onError: error => toast.error(error.message) }
               )
             }
-            onWallpaper={wallpaper =>
-              setWallpaper.mutate(
-                { wallpaper },
-                { onError: error => toast.error(error.message) }
-              )
-            }
             updateBusy={update.isPending}
             uninstallBusy={uninstall.isPending}
-            wallpaperBusy={setWallpaper.isPending}
+            arranging={arranging}
+            onArrange={() => setArranging(value => !value)}
+            onMove={moveApp}
+            arrangeBusy={setAppOrder.isPending}
           />
         )}
         {section === "store" && (
@@ -324,6 +366,23 @@ export default function YobOS() {
               install.isPending ? install.variables?.appId : undefined
             }
             updateId={update.isPending ? update.variables?.appId : undefined}
+            wallpaper={homeQuery.data?.wallpaper}
+            wallpaperPhotoUrl={homeQuery.data?.wallpaperPhotoUrl}
+            onWallpaper={wallpaper =>
+              guarded(() =>
+                setWallpaper.mutate(
+                  { wallpaper },
+                  { onError: error => toast.error(error.message) }
+                )
+              )
+            }
+            onChooseWallpaperPhoto={() =>
+              guarded(() => wallpaperInputRef.current?.click())
+            }
+            wallpaperBusy={
+              setWallpaper.isPending || setWallpaperPhoto.isPending
+            }
+            androidDownloadUrl="https://github.com/nexuss0781/YOB-OS/releases/latest/download/YOB-OS-Android.apk"
           />
         )}
         {section === "studio" && (
@@ -353,6 +412,17 @@ export default function YobOS() {
           />
         )}
       </main>
+      <input
+        ref={wallpaperInputRef}
+        className="hidden"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          if (file) void uploadWallpaperPhoto(file);
+          event.currentTarget.value = "";
+        }}
+      />
       {player && <YobAppPlayer app={player} onExit={() => setPlayer(null)} />}
     </div>
   );
@@ -366,10 +436,12 @@ function HomeScreen({
   onLaunch,
   onUpdate,
   onUninstall,
-  onWallpaper,
   updateBusy,
   uninstallBusy,
-  wallpaperBusy,
+  arranging,
+  onArrange,
+  onMove,
+  arrangeBusy,
 }: {
   data: HomeSnapshot | undefined;
   isLoading: boolean;
@@ -378,74 +450,55 @@ function HomeScreen({
   onLaunch: (id: string) => void;
   onUpdate: (id: string) => void;
   onUninstall: (id: string) => void;
-  onWallpaper: (wallpaper: "aurora" | "glacier" | "dusk" | "void") => void;
   updateBusy: boolean;
   uninstallBusy: boolean;
-  wallpaperBusy: boolean;
+  arranging: boolean;
+  onArrange: () => void;
+  onMove: (appId: string, direction: -1 | 1) => void;
+  arrangeBusy: boolean;
 }) {
-  const activeWallpaper =
-    WALLPAPERS.find(wallpaper => wallpaper.id === data?.wallpaper) ??
-    WALLPAPERS[0];
   if (!isAuthenticated) return <GuestHome onSignIn={onSignIn} />;
   return (
     <section className="px-4 pb-8 sm:px-8">
-      <div className={cn("home-surface", activeWallpaper.className)}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_76%_20%,rgba(255,255,255,.15),transparent_29%),linear-gradient(180deg,rgba(2,3,15,.06),rgba(2,3,15,.78))]" />
+      <div
+        className={cn(
+          "home-surface",
+          !data?.wallpaperPhotoUrl && "wallpaper-aurora"
+        )}
+        style={
+          data?.wallpaperPhotoUrl
+            ? {
+                backgroundImage: `url(${data.wallpaperPhotoUrl})`,
+                backgroundPosition: "center",
+                backgroundSize: "cover",
+              }
+            : undefined
+        }
+      >
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,3,15,.08),rgba(2,3,15,.72))]" />
         <div className="relative flex min-h-[680px] flex-col p-5 sm:p-8">
-          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[.24em] text-white/55">
-                YOB-OS home
-              </p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
-                Good to see you,{" "}
-                <span className="text-cyan-100">
-                  {data ? "Explorer" : "there"}
-                </span>
-                .
-              </h1>
-              <p className="mt-2 max-w-md text-sm leading-6 text-white/65">
-                Your apps, wallpaper, and installed versions follow your account
-                across devices.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-right backdrop-blur-md">
-              <p className="text-2xl font-black">{data?.apps.length ?? 0}</p>
-              <p className="text-[10px] font-bold uppercase tracking-[.16em] text-white/50">
-                Installed apps
-              </p>
-            </div>
+          <div className="flex justify-end">
+            <button
+              onClick={onArrange}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-bold text-white/75 backdrop-blur-md hover:bg-white/10"
+            >
+              <GripVertical size={14} />
+              {arranging ? "Done" : "Arrange"}
+            </button>
           </div>
-          <div className="mt-8 flex items-center gap-2 overflow-x-auto pb-1">
-            <span className="mr-1 shrink-0 text-[10px] font-bold uppercase tracking-[.15em] text-white/50">
-              Wallpaper
-            </span>
-            {WALLPAPERS.map(wallpaper => (
-              <button
-                key={wallpaper.id}
-                disabled={wallpaperBusy}
-                onClick={() => onWallpaper(wallpaper.id)}
-                className={cn(
-                  "group flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                  activeWallpaper.id === wallpaper.id
-                    ? "border-white/40 bg-white/15"
-                    : "border-white/10 bg-black/10 text-white/60 hover:bg-white/10"
-                )}
-              >
-                <span
-                  className={cn("size-3 rounded-full", wallpaper.className)}
-                />
-                {wallpaper.label}
-              </button>
-            ))}
-          </div>
+          {arranging && (
+            <p className="mt-5 text-center text-xs font-semibold text-white/70">
+              Use the arrows to place your apps. Your order is saved to your
+              account.
+            </p>
+          )}
           {isLoading ? (
             <div className="mt-14 flex flex-1 items-center justify-center">
               <Loader2 className="animate-spin text-white/45" />
             </div>
           ) : data?.apps.length ? (
             <div className="mt-12 grid grid-cols-3 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-7 lg:grid-cols-5 xl:grid-cols-6">
-              {data.apps.map(app => (
+              {data.apps.map((app, index) => (
                 <div key={app.id} className="group relative text-center">
                   <button
                     className="mx-auto block"
@@ -456,7 +509,7 @@ function HomeScreen({
                       {app.name}
                     </p>
                   </button>
-                  {app.canUpdate && (
+                  {!arranging && app.canUpdate && (
                     <button
                       disabled={updateBusy}
                       onClick={() => onUpdate(app.id)}
@@ -465,14 +518,34 @@ function HomeScreen({
                       Update
                     </button>
                   )}
-                  <button
-                    disabled={uninstallBusy}
-                    onClick={() => onUninstall(app.id)}
-                    className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-black/50 text-white/0 transition group-hover:text-white/60 hover:!text-rose-200"
-                    aria-label={`Uninstall ${app.name}`}
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  {arranging ? (
+                    <div className="mt-2 flex justify-center gap-1">
+                      <button
+                        disabled={arrangeBusy || index === 0}
+                        onClick={() => onMove(app.id, -1)}
+                        className="rounded-lg border border-white/10 bg-black/25 p-1.5 text-white/75 disabled:opacity-30"
+                        aria-label={`Move ${app.name} left`}
+                      >
+                        <ArrowLeft size={12} />
+                      </button>
+                      <button
+                        disabled={arrangeBusy || index === data.apps.length - 1}
+                        onClick={() => onMove(app.id, 1)}
+                        className="rounded-lg border border-white/10 bg-black/25 p-1.5 text-white/75 disabled:opacity-30"
+                        aria-label={`Move ${app.name} right`}
+                      >
+                        <ArrowRight size={12} />
+                      </button>
+                      <button
+                        disabled={uninstallBusy}
+                        onClick={() => onUninstall(app.id)}
+                        className="rounded-lg border border-rose-200/20 bg-black/25 p-1.5 text-rose-100/80"
+                        aria-label={`Remove ${app.name}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -495,14 +568,13 @@ function GuestHome({ onSignIn }: { onSignIn: () => void }) {
             <Boxes size={23} />
           </span>
           <p className="text-xs font-bold uppercase tracking-[.24em] text-cyan-100/70">
-            Your personal cloud
+            Your app space
           </p>
           <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
             One home for every HTML app you trust.
           </h1>
           <p className="mt-5 max-w-lg text-sm leading-7 text-white/65">
-            Sign in to install apps, personalize your YOB-OS wallpaper, and keep
-            your setup in sync on the web and Android.
+            Sign in to collect the apps you need and make the space your own.
           </p>
           <Button
             onClick={onSignIn}
@@ -547,6 +619,12 @@ function StoreScreen({
   onUpdate,
   installingId,
   updateId,
+  wallpaper,
+  wallpaperPhotoUrl,
+  onWallpaper,
+  onChooseWallpaperPhoto,
+  wallpaperBusy,
+  androidDownloadUrl,
 }: {
   apps: StoreApp[] | undefined;
   installedApps: HomeSnapshot["apps"] | undefined;
@@ -563,6 +641,12 @@ function StoreScreen({
   onUpdate: (id: string) => void;
   installingId?: string;
   updateId?: string;
+  wallpaper: "aurora" | "glacier" | "dusk" | "void" | undefined;
+  wallpaperPhotoUrl: string | null | undefined;
+  onWallpaper: (wallpaper: "aurora" | "glacier" | "dusk" | "void") => void;
+  onChooseWallpaperPhoto: () => void;
+  wallpaperBusy: boolean;
+  androidDownloadUrl: string;
 }) {
   return (
     <section className="px-5 pb-10 sm:px-8">
@@ -570,14 +654,13 @@ function StoreScreen({
         <div className="store-hero">
           <div>
             <p className="text-xs font-bold uppercase tracking-[.22em] text-violet-200/75">
-              YOB-OS Play Store
+              Explore YOB-OS
             </p>
             <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-              Small apps. Your own space.
+              Apps and appearance, in one place.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/55">
-              Every published app is a versioned HTML package. Install only what
-              you want on your personal home screen.
+              Choose the apps you want, then make the launcher feel like yours.
             </p>
           </div>
           <div className="mt-5 flex h-11 w-full items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 sm:mt-0 sm:w-[286px]">
@@ -590,10 +673,79 @@ function StoreScreen({
             />
           </div>
         </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
+          <div className="rounded-3xl border border-white/10 bg-white/[.035] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold">Appearance</p>
+                <p className="mt-1 text-xs leading-5 text-white/50">
+                  Pick a color field or use a personal photo for your launcher.
+                </p>
+              </div>
+              <span className="grid size-9 place-items-center rounded-xl bg-cyan-200/10 text-cyan-100">
+                <Settings2 size={17} />
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {WALLPAPERS.map(item => (
+                <button
+                  key={item.id}
+                  disabled={wallpaperBusy}
+                  onClick={() => onWallpaper(item.id)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition",
+                    !wallpaperPhotoUrl && wallpaper === item.id
+                      ? "border-cyan-100/50 bg-cyan-100/10 text-cyan-50"
+                      : "border-white/10 bg-black/10 text-white/65 hover:bg-white/10"
+                  )}
+                >
+                  <span className={cn("size-3 rounded-full", item.className)} />
+                  {item.label}
+                </button>
+              ))}
+              <button
+                disabled={wallpaperBusy}
+                onClick={onChooseWallpaperPhoto}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition",
+                  wallpaperPhotoUrl
+                    ? "border-cyan-100/50 bg-cyan-100/10 text-cyan-50"
+                    : "border-white/10 bg-black/10 text-white/65 hover:bg-white/10"
+                )}
+              >
+                <Upload size={13} />
+                Photo
+              </button>
+            </div>
+          </div>
+          <a
+            href={androidDownloadUrl}
+            className="group rounded-3xl border border-cyan-200/20 bg-[linear-gradient(135deg,rgba(34,211,238,.13),rgba(139,92,246,.12))] p-5 transition hover:border-cyan-100/45"
+          >
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-2xl bg-cyan-100 text-slate-950">
+                <Smartphone size={19} />
+              </span>
+              <div>
+                <p className="text-sm font-black">YOB-OS for Android</p>
+                <p className="mt-1 text-xs text-white/55">
+                  Install the companion app
+                </p>
+              </div>
+            </div>
+            <p className="mt-5 flex items-center gap-2 text-xs font-bold text-cyan-100">
+              Download Android app{" "}
+              <Download
+                size={14}
+                className="transition group-hover:translate-y-0.5"
+              />
+            </p>
+          </a>
+        </div>
         <div className="mt-8 flex items-center justify-between">
           <p className="text-sm text-white/50">
             {isLoading
-              ? "Searching the cloud…"
+              ? "Finding apps…"
               : `${apps?.length ?? 0} published app${apps?.length === 1 ? "" : "s"}`}
           </p>
           {!isAuthenticated && (

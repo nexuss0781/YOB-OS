@@ -65,6 +65,8 @@ export type UserPreferenceRow = {
   id: string;
   userId: number;
   wallpaper: WallpaperId;
+  wallpaperPhotoKey: string | null;
+  appOrder: string[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -119,15 +121,15 @@ type RawPreference = {
   id: string;
   user_id: number;
   wallpaper: WallpaperId;
+  wallpaper_photo_key: string | null;
+  app_order_json: string | null;
   created_at: number;
   updated_at: number;
 };
 
 const PARADOX_PROJECT = "yob-os";
 const PARADOX_DATABASE = "yob-os";
-const PARADOX_RUNTIME_DIR = path.join(os.tmpdir(), "yob-os-paradox");
-const PARADOX_DB_PATH = path.join(PARADOX_RUNTIME_DIR, "yob-os.db");
-process.env.PARADOX_HOME ??= path.join(PARADOX_RUNTIME_DIR, "config");
+const PARADOX_DB_PATH = path.join(os.tmpdir(), "yob-os-paradox", "yob-os.db");
 const FALLBACK_GATEWAY = "https://paradox-db.onrender.com/v1";
 const ACTIVE_GATEWAY_RESOLVER =
   "https://paradox-domain.onrender.com/active-domain.json";
@@ -196,10 +198,21 @@ export function mapInstallation(row: RawInstallation): AppInstallationRow {
 }
 
 export function mapPreference(row: RawPreference): UserPreferenceRow {
+  let appOrder: string[] = [];
+  try {
+    const parsed = JSON.parse(row.app_order_json ?? "[]") as unknown;
+    appOrder = Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    appOrder = [];
+  }
   return {
     id: row.id,
     userId: Number(row.user_id),
     wallpaper: row.wallpaper,
+    wallpaperPhotoKey: row.wallpaper_photo_key,
+    appOrder,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -222,8 +235,8 @@ function schemaExists(db: ParadConnection) {
   );
 }
 
-function hasColumn(db: ParadConnection, column: string) {
-  return rows<{ name: string }>(db, "PRAGMA table_info(users)").some(
+function hasColumn(db: ParadConnection, table: string, column: string) {
+  return rows<{ name: string }>(db, `PRAGMA table_info(${table})`).some(
     row => row.name === column
   );
 }
@@ -280,6 +293,8 @@ function ensureSchema(db: ParadConnection) {
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
     wallpaper TEXT NOT NULL DEFAULT 'aurora' CHECK (wallpaper IN ('aurora', 'glacier', 'dusk', 'void')),
+    wallpaper_photo_key TEXT,
+    app_order_json TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
@@ -291,8 +306,18 @@ function ensureSchema(db: ParadConnection) {
     );
   }
 
-  if (!hasColumn(db, "password_hash")) {
+  if (!hasColumn(db, "users", "password_hash")) {
     db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT");
+  }
+  if (!hasColumn(db, "user_preferences", "wallpaper_photo_key")) {
+    db.execute(
+      "ALTER TABLE user_preferences ADD COLUMN wallpaper_photo_key TEXT"
+    );
+  }
+  if (!hasColumn(db, "user_preferences", "app_order_json")) {
+    db.execute(
+      "ALTER TABLE user_preferences ADD COLUMN app_order_json TEXT NOT NULL DEFAULT '[]'"
+    );
   }
   db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email) WHERE email IS NOT NULL"

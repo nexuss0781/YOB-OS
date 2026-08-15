@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_HTML_APP_BYTES, decodeAndValidateHtml, makeAppSlug } from "./yob";
+import {
+  MAX_HTML_APP_BYTES,
+  decodeAndValidateHtml,
+  decodeAndValidateWallpaperImage,
+  makeAppSlug,
+  makeWallpaperStorageKey,
+} from "./yob";
 
 function encodeHtml(value: string) {
   return Buffer.from(value, "utf8").toString("base64");
@@ -48,6 +54,29 @@ describe("HTML application package validation", () => {
 
     expect(first).toMatch(/^orbit-runner-[a-f0-9]{8}$/);
     expect(second).toMatch(/^orbit-runner-[a-f0-9]{8}$/);
+    expect(first).not.toBe(second);
+  });
+
+  it("accepts only wallpaper bytes whose signature matches the declared image format", () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
+    const result = decodeAndValidateWallpaperImage(
+      png.toString("base64"),
+      "image/png"
+    );
+
+    expect(result.extension).toBe("png");
+    expect(result.bytes).toEqual(png);
+    expect(() =>
+      decodeAndValidateWallpaperImage(png.toString("base64"), "image/jpeg")
+    ).toThrow("does not match");
+  });
+
+  it("creates isolated, non-guessable wallpaper storage keys", () => {
+    const first = makeWallpaperStorageKey(42, "webp");
+    const second = makeWallpaperStorageKey(42, "webp");
+
+    expect(first).toMatch(/^yob-os\/users\/42\/wallpapers\/[a-f0-9-]+\.webp$/);
+    expect(second).toMatch(/^yob-os\/users\/42\/wallpapers\/[a-f0-9-]+\.webp$/);
     expect(first).not.toBe(second);
   });
 });

@@ -62,3 +62,10 @@
 - [x] Redesign Android home, authentication, store, and player experiences with refined hierarchy, interaction feedback, and accessible color contrast.
 - [x] Configure and validate a polished installable Android release, documenting any Android security warnings that cannot be controlled by the app.
 - [x] Build and deliver the redesigned YOB-OS Android APK.
+- [ ] Remove exposed cloud-service URLs, live-sync labels, and infrastructure wording from Android user-facing screens.
+- [ ] Add synchronized photo wallpaper upload and selection backed by secure object storage and user preferences.
+- [ ] Persist and expose a user-configurable installed-app order for a distraction-free Android home screen.
+- [ ] Redesign the Android home as a focused app launcher, moving wallpaper and discovery controls to a separate Explore destination with navigation clear of system controls.
+- [ ] Add a professional Android download entry point to the YOB-OS website without platform-hosting references in user-facing copy.
+- [ ] Publish the signed Android APK as a GitHub Release and link the released artifact from the YOB-OS website.
+- [ ] Build, validate, and deliver the refined operating-system APK.

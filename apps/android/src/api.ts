@@ -21,7 +21,11 @@ export type HomeApp = StoreApp & {
   hasUpdate: boolean;
   canUpdate: boolean;
 };
-export type HomeSnapshot = { wallpaper: WallpaperId; apps: HomeApp[] };
+export type HomeSnapshot = {
+  wallpaper: WallpaperId;
+  wallpaperPhotoUrl: string | null;
+  apps: HomeApp[];
+};
 export type LaunchPayload = {
   appId: string;
   name: string;
@@ -55,6 +59,15 @@ export type YobApi = {
       uninstall: { mutate(input: { appId: string }): Promise<HomeSnapshot> };
       setWallpaper: {
         mutate(input: { wallpaper: WallpaperId }): Promise<HomeSnapshot>;
+      };
+      setWallpaperPhoto: {
+        mutate(input: {
+          base64: string;
+          mimeType: "image/jpeg" | "image/png" | "image/webp";
+        }): Promise<HomeSnapshot>;
+      };
+      setAppOrder: {
+        mutate(input: { appIds: string[] }): Promise<HomeSnapshot>;
       };
       launch: { query(input: { appId: string }): Promise<LaunchPayload> };
     };

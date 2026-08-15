@@ -11,7 +11,9 @@ import {
   publishApp,
   publishVersion,
   setAppStatus,
+  setAppOrder,
   setWallpaper,
+  setWallpaperPhoto,
   uninstallApp,
 } from "../yobStore";
 import { APP_STATUSES, WALLPAPERS } from "../../shared/yob";
@@ -47,6 +49,19 @@ export const yobRouter = router({
     setWallpaper: protectedProcedure
       .input(z.object({ wallpaper: z.enum(WALLPAPERS) }))
       .mutation(({ ctx, input }) => setWallpaper(ctx.user.id, input.wallpaper)),
+    setWallpaperPhoto: protectedProcedure
+      .input(
+        z.object({
+          base64: z.string().min(16).max(7_000_000),
+          mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        setWallpaperPhoto({ userId: ctx.user.id, ...input })
+      ),
+    setAppOrder: protectedProcedure
+      .input(z.object({ appIds: z.array(z.string().uuid()).max(500) }))
+      .mutation(({ ctx, input }) => setAppOrder(ctx.user.id, input.appIds)),
     update: protectedProcedure
       .input(appIdInput)
       .mutation(({ ctx, input }) => applyUpdate(ctx.user.id, input.appId)),

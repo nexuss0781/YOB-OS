@@ -16,8 +16,10 @@ import {
   createAppId,
   createVersionId,
   decodeAndValidateHtml,
+  decodeAndValidateWallpaperImage,
   makeAppSlug,
   makeHtmlStorageKey,
+  makeWallpaperStorageKey,
 } from "../shared/yob";
 import { storageGet, storagePut } from "./storage";
 
@@ -319,32 +321,47 @@ export async function homeSnapshot(userId: number) {
     );
     const current = await currentVersions(db, listings);
 
-    return {
-      wallpaper: preference ? mapPreference(preference).wallpaper : "aurora",
-      apps: installations.flatMap(installation => {
-        const listing = listingById.get(installation.appId);
-        const installedVersion = installedVersionById.get(
-          installation.installedVersionId
-        );
-        if (!listing || !installedVersion || listing.status === "deleted")
-          return [];
-        return [
-          {
-            ...listingView(
-              listing,
-              current.get(listing.currentVersionId ?? ""),
-              installation.installedVersionId
-            ),
-            installedVersion: {
-              id: installedVersion.id,
-              version: installedVersion.version,
-            },
-            canUpdate:
-              listing.status === "active" &&
-              installation.installedVersionId !== listing.currentVersionId,
+    const preferenceView = preference ? mapPreference(preference) : null;
+    const apps = installations.flatMap(installation => {
+      const listing = listingById.get(installation.appId);
+      const installedVersion = installedVersionById.get(
+        installation.installedVersionId
+      );
+      if (!listing || !installedVersion || listing.status === "deleted")
+        return [];
+      return [
+        {
+          ...listingView(
+            listing,
+            current.get(listing.currentVersionId ?? ""),
+            installation.installedVersionId
+          ),
+          installedVersion: {
+            id: installedVersion.id,
+            version: installedVersion.version,
           },
-        ];
-      }),
+          canUpdate:
+            listing.status === "active" &&
+            installation.installedVersionId !== listing.currentVersionId,
+        },
+      ];
+    });
+    const orderIndex = new Map(
+      (preferenceView?.appOrder ?? []).map((appId, index) => [appId, index])
+    );
+    apps.sort((left, right) => {
+      const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex || left.name.localeCompare(right.name);
+    });
+    const wallpaperPhotoUrl = preferenceView?.wallpaperPhotoKey
+      ? (await storageGet(preferenceView.wallpaperPhotoKey)).url
+      : null;
+
+    return {
+      wallpaper: preferenceView?.wallpaper ?? "aurora",
+      wallpaperPhotoUrl,
+      apps,
     };
   });
 }
@@ -360,14 +377,91 @@ export async function setWallpaper(userId: number, wallpaper: WallpaperId) {
       );
       if (preference) {
         db.execute(
-          "UPDATE user_preferences SET wallpaper = ?, updated_at = ? WHERE user_id = ?",
+          "UPDATE user_preferences SET wallpaper = ?, wallpaper_photo_key = NULL, updated_at = ? WHERE user_id = ?",
           [wallpaper, now, userId]
         );
       } else {
         db.execute(
-          `INSERT INTO user_preferences (id, user_id, wallpaper, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, '[]', ?, ?)`,
           [createAppId(), userId, wallpaper, now, now]
+        );
+      }
+    },
+    { write: true }
+  );
+  return homeSnapshot(userId);
+}
+
+export async function setWallpaperPhoto(input: {
+  userId: number;
+  base64: string;
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+}) {
+  const image = decodeAndValidateWallpaperImage(input.base64, input.mimeType);
+  const stored = await storagePut(
+    makeWallpaperStorageKey(input.userId, image.extension),
+    image.bytes,
+    image.mimeType
+  );
+  const now = Date.now();
+  await withParadox(
+    db => {
+      const preference = one<{ id: string }>(
+        db,
+        "SELECT id FROM user_preferences WHERE user_id = ? LIMIT 1",
+        [input.userId]
+      );
+      if (preference) {
+        db.execute(
+          "UPDATE user_preferences SET wallpaper_photo_key = ?, updated_at = ? WHERE user_id = ?",
+          [stored.key, now, input.userId]
+        );
+      } else {
+        db.execute(
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, 'aurora', ?, '[]', ?, ?)`,
+          [createAppId(), input.userId, stored.key, now, now]
+        );
+      }
+    },
+    { write: true }
+  );
+  return homeSnapshot(input.userId);
+}
+
+export async function setAppOrder(userId: number, appIds: string[]) {
+  const uniqueAppIds = appIds.filter(
+    (appId, index) => appIds.indexOf(appId) === index
+  );
+  const now = Date.now();
+  await withParadox(
+    db => {
+      const installedIds = new Set(
+        rows<{ app_id: string }>(
+          db,
+          "SELECT app_id FROM app_installations WHERE user_id = ?",
+          [userId]
+        ).map(row => row.app_id)
+      );
+      if (uniqueAppIds.some(appId => !installedIds.has(appId))) {
+        fail("BAD_REQUEST", "App order can only include installed apps.");
+      }
+      const preference = one<{ id: string }>(
+        db,
+        "SELECT id FROM user_preferences WHERE user_id = ? LIMIT 1",
+        [userId]
+      );
+      if (preference) {
+        db.execute(
+          "UPDATE user_preferences SET app_order_json = ?, updated_at = ? WHERE user_id = ?",
+          [JSON.stringify(uniqueAppIds), now, userId]
+        );
+      } else {
+        db.execute(
+          `INSERT INTO user_preferences (id, user_id, wallpaper, wallpaper_photo_key, app_order_json, created_at, updated_at)
+           VALUES (?, ?, 'aurora', NULL, ?, ?, ?)`,
+          [createAppId(), userId, JSON.stringify(uniqueAppIds), now, now]
         );
       }
     },

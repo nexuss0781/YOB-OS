@@ -1,5 +1,6 @@
-import Constants from "expo-constants";
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
+import * as ImagePicker from "expo-image-picker";
 import {
   useCallback,
   useEffect,
@@ -14,6 +15,7 @@ import {
   BackHandler,
   FlatList,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -27,6 +29,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import {
+  type HomeApp,
   type HomeSnapshot,
   type LaunchPayload,
   type StoreApp,
@@ -41,8 +44,9 @@ import {
 } from "./src/auth";
 import { colors, styles } from "./src/theme";
 
-type Tab = "home" | "store" | "settings";
+type Tab = "home" | "explore" | "settings";
 type FeatherName = ComponentProps<typeof Feather>["name"];
+type PhotoMime = "image/jpeg" | "image/png" | "image/webp";
 
 const brandMark = require("./assets/yob-os-icon.png");
 const configuredApi =
@@ -54,16 +58,15 @@ const wallpapers: {
   id: WallpaperId;
   label: string;
   color: string;
-  icon: FeatherName;
+  accent: string;
 }[] = [
-  { id: "aurora", label: "Aurora", color: "#45D8FF", icon: "sun" },
-  { id: "glacier", label: "Glacier", color: "#8BB9FF", icon: "wind" },
-  { id: "dusk", label: "Dusk", color: "#D98DFF", icon: "moon" },
-  { id: "void", label: "Void", color: "#5D6CF2", icon: "circle" },
+  { id: "aurora", label: "Aurora", color: "#45D8FF", accent: "#122E49" },
+  { id: "glacier", label: "Glacier", color: "#90B7FF", accent: "#182B50" },
+  { id: "dusk", label: "Dusk", color: "#D391FF", accent: "#36224A" },
+  { id: "void", label: "Void", color: "#6C7DFF", accent: "#171A42" },
 ];
 
 export default function App() {
-  const [apiBaseUrl, setApiBaseUrl] = useState(configuredApi);
   const [token, setToken] = useState<string | null>(null);
   const [home, setHome] = useState<HomeSnapshot | null>(null);
   const [store, setStore] = useState<StoreApp[]>([]);
@@ -72,21 +75,22 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [player, setPlayer] = useState<LaunchPayload | null>(null);
+  const [arranging, setArranging] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
 
   const api = useMemo(
-    () => (apiBaseUrl ? createApi(apiBaseUrl, async () => token) : null),
-    [apiBaseUrl, token]
+    () => (configuredApi ? createApi(configuredApi, async () => token) : null),
+    [token]
   );
   const refresh = useCallback(async () => {
     if (!api) return;
     setLoading(true);
     try {
-      const publishedApps = await api.yob.store.list.query({});
-      setStore(publishedApps);
+      const listings = await api.yob.store.list.query({});
+      setStore(listings);
       if (token) {
         setHome(await api.yob.home.snapshot.query());
         setPublished(await api.yob.publisher.list.query());
@@ -96,10 +100,8 @@ export default function App() {
       }
     } catch (error) {
       Alert.alert(
-        "Connection unavailable",
-        error instanceof Error
-          ? error.message
-          : "YOB-OS could not reach the cloud service."
+        "Unable to refresh",
+        error instanceof Error ? error.message : "Please try again shortly."
       );
     } finally {
       setLoading(false);
@@ -115,47 +117,7 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
-  const ensureSignedIn = async () => {
-    if (!apiBaseUrl) {
-      setTab("settings");
-      Alert.alert(
-        "Cloud address needed",
-        "Add your YOB-OS cloud address before signing in."
-      );
-      return null;
-    }
-    if (token) return token;
-    setTab("home");
-    return null;
-  };
-
-  const submitCredentials = async () => {
-    if (!apiBaseUrl) return void (await ensureSignedIn());
-    try {
-      setBusy(true);
-      const nextToken =
-        authMode === "login"
-          ? await signInWithPassword(apiBaseUrl, authEmail.trim(), authPassword)
-          : await registerWithPassword(
-              apiBaseUrl,
-              authName.trim(),
-              authEmail.trim(),
-              authPassword
-            );
-      setToken(nextToken);
-      setAuthPassword("");
-      await refresh();
-    } catch (error) {
-      Alert.alert(
-        authMode === "login" ? "Unable to sign in" : "Unable to create account",
-        error instanceof Error ? error.message : "Please try again."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runMutation = async (
+  const perform = async (
     work: () => Promise<void>,
     title: string,
     fallback: string
@@ -170,269 +132,334 @@ export default function App() {
     }
   };
 
-  const install = async (appId: string) => {
-    if (!api || !(await ensureSignedIn())) return;
-    await runMutation(
+  const submitCredentials = async () => {
+    if (!configuredApi) return;
+    await perform(
       async () => {
-        setHome(
-          (await api.yob.store.install.mutate({ appId })) as HomeSnapshot
-        );
+        const nextToken =
+          authMode === "login"
+            ? await signInWithPassword(
+                configuredApi,
+                authEmail.trim(),
+                authPassword
+              )
+            : await registerWithPassword(
+                configuredApi,
+                authName.trim(),
+                authEmail.trim(),
+                authPassword
+              );
+        setToken(nextToken);
+        setAuthPassword("");
+      },
+      "Unable to continue",
+      "Please check your details and try again."
+    );
+  };
+
+  const install = async (appId: string) => {
+    if (!api || !token) {
+      setTab("home");
+      return;
+    }
+    await perform(
+      async () => {
+        setHome(await api.yob.store.install.mutate({ appId }));
         setTab("home");
       },
       "Install unavailable",
-      "Unable to install this app."
+      "Unable to add this app right now."
     );
   };
-  const update = async (appId: string) => {
+  const launch = async (appId: string) => {
     if (!api) return;
-    await runMutation(
+    await perform(
       async () => {
-        setHome((await api.yob.home.update.mutate({ appId })) as HomeSnapshot);
+        setPlayer(await api.yob.home.launch.query({ appId }));
+      },
+      "Launch unavailable",
+      "Unable to open this app right now."
+    );
+  };
+  const applyUpdate = async (appId: string) => {
+    if (!api) return;
+    await perform(
+      async () => {
+        setHome(await api.yob.home.update.mutate({ appId }));
       },
       "Update unavailable",
-      "Unable to apply the update."
+      "Unable to update this app right now."
     );
   };
   const uninstall = async (appId: string) => {
     if (!api) return;
     Alert.alert(
-      "Remove app?",
-      "The app stays available in your Play Store library.",
+      "Remove this app?",
+      "It remains available in Explore if you want it again.",
       [
         { text: "Keep", style: "cancel" },
         {
           text: "Remove",
           style: "destructive",
           onPress: () =>
-            void runMutation(
+            void perform(
               async () => {
-                setHome(
-                  (await api.yob.home.uninstall.mutate({
-                    appId,
-                  })) as HomeSnapshot
-                );
+                setHome(await api.yob.home.uninstall.mutate({ appId }));
               },
               "Removal unavailable",
-              "Unable to remove this app."
+              "Unable to remove this app right now."
             ),
         },
       ]
     );
   };
-  const launch = async (appId: string) => {
-    if (!api) return;
-    await runMutation(
-      async () => {
-        setPlayer(
-          (await api.yob.home.launch.query({ appId })) as LaunchPayload
-        );
-      },
-      "Launch unavailable",
-      "Unable to launch this app."
-    );
-  };
   const setWallpaper = async (wallpaper: WallpaperId) => {
     if (!api) return;
-    await runMutation(
+    await perform(
+      async () => {
+        setHome(await api.yob.home.setWallpaper.mutate({ wallpaper }));
+      },
+      "Appearance unavailable",
+      "Unable to save this wallpaper right now."
+    );
+  };
+  const chooseWallpaperPhoto = async () => {
+    if (!api) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Photo access needed",
+        "Allow photo access to use a personal wallpaper."
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [9, 16],
+      quality: 0.82,
+      base64: true,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    const photoBase64 = asset.base64;
+    const mimeType = asset.mimeType;
+    if (!photoBase64 || !isPhotoMime(mimeType)) {
+      Alert.alert(
+        "Use a supported photo",
+        "Choose a JPG, PNG, or WebP image under 5 MiB."
+      );
+      return;
+    }
+    await perform(
       async () => {
         setHome(
-          (await api.yob.home.setWallpaper.mutate({
-            wallpaper,
-          })) as HomeSnapshot
+          await api.yob.home.setWallpaperPhoto.mutate({
+            base64: photoBase64,
+            mimeType,
+          })
         );
       },
-      "Wallpaper unavailable",
-      "Unable to save this appearance choice."
+      "Photo unavailable",
+      "Unable to save this photo right now."
     );
+  };
+  const moveApp = async (appId: string, direction: -1 | 1) => {
+    if (!api || !home) return;
+    const currentIndex = home.apps.findIndex(app => app.id === appId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= home.apps.length)
+      return;
+    const nextApps = [...home.apps];
+    const [moved] = nextApps.splice(currentIndex, 1);
+    nextApps.splice(nextIndex, 0, moved);
+    const previous = home;
+    setHome({ ...home, apps: nextApps });
+    try {
+      setBusy(true);
+      setHome(
+        await api.yob.home.setAppOrder.mutate({
+          appIds: nextApps.map(app => app.id),
+        })
+      );
+    } catch (error) {
+      setHome(previous);
+      Alert.alert(
+        "Arrangement unavailable",
+        error instanceof Error
+          ? error.message
+          : "Unable to save your app order."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
   const setStatus = async (appId: string, status: "deprecated" | "deleted") => {
     if (!api) return;
-    await runMutation(
+    await perform(
       async () => {
         setPublished(
           await api.yob.publisher.setStatus.mutate({ appId, status })
         );
         await refresh();
       },
-      "Listing change unavailable",
+      "Listing unavailable",
       "Unable to update this listing."
     );
   };
 
   if (player) {
-    return (
-      <Player
-        app={player}
-        apiBaseUrl={apiBaseUrl}
-        onExit={() => setPlayer(null)}
-      />
-    );
+    return <Player app={player} onExit={() => setPlayer(null)} />;
   }
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
+      <SafeAreaView
+        style={styles.screen}
+        edges={["top", "left", "right", "bottom"]}
+      >
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-        <View style={local.header}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setTab("home")}
-            style={local.brandLockup}
-          >
-            <BrandMark size={42} />
-            <View>
-              <Text style={local.brandKicker}>YOUR PERSONAL CLOUD</Text>
-              <Text style={local.brand}>YOB-OS</Text>
-            </View>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            onPress={() => void (token ? refresh() : ensureSignedIn())}
-            style={({ pressed }) => [
-              local.statusPill,
-              pressed && local.pressed,
-              busy && local.disabled,
-            ]}
-          >
-            <View
-              style={[
-                local.statusDot,
-                { backgroundColor: token ? colors.mint : colors.cyan },
-              ]}
+        <SystemNavigation active={tab} onChange={setTab} />
+        <View style={local.content}>
+          {loading ? (
+            <LoadingState />
+          ) : tab === "home" ? (
+            <Launcher
+              home={home}
+              token={token}
+              arranging={arranging}
+              busy={busy}
+              authMode={authMode}
+              authName={authName}
+              authEmail={authEmail}
+              authPassword={authPassword}
+              onAuthMode={setAuthMode}
+              onName={setAuthName}
+              onEmail={setAuthEmail}
+              onPassword={setAuthPassword}
+              onSignIn={() => void submitCredentials()}
+              onLaunch={launch}
+              onMove={moveApp}
+              onArrange={() => setArranging(value => !value)}
+              onUpdate={applyUpdate}
+              onUninstall={uninstall}
             />
-            <Text style={local.statusText}>
-              {busy ? "Syncing" : token ? "Synced" : "Sign in"}
-            </Text>
-          </Pressable>
-        </View>
-
-        {loading ? (
-          <LoadingState />
-        ) : tab === "home" ? (
-          <Home
-            home={home}
-            token={token}
-            authMode={authMode}
-            authName={authName}
-            authEmail={authEmail}
-            authPassword={authPassword}
-            busy={busy}
-            onAuthMode={setAuthMode}
-            onName={setAuthName}
-            onEmail={setAuthEmail}
-            onPassword={setAuthPassword}
-            onSignIn={() => void submitCredentials()}
-            onLaunch={launch}
-            onUpdate={update}
-            onUninstall={uninstall}
-            onWallpaper={setWallpaper}
-          />
-        ) : tab === "store" ? (
-          <Store apps={store} busy={busy} onInstall={install} />
-        ) : (
-          <Settings
-            apiBaseUrl={apiBaseUrl}
-            setApiBaseUrl={setApiBaseUrl}
-            token={token}
-            published={published}
-            busy={busy}
-            onSetStatus={setStatus}
-            onLogout={async () => {
-              await clearSessionToken();
-              setToken(null);
-              setHome(null);
-              setPublished([]);
-            }}
-          />
-        )}
-
-        <View style={local.tabBar}>
-          <TabButton
-            active={tab === "home"}
-            label="Home"
-            icon="grid"
-            onPress={() => setTab("home")}
-          />
-          <TabButton
-            active={tab === "store"}
-            label="Discover"
-            icon="compass"
-            onPress={() => setTab("store")}
-          />
-          <TabButton
-            active={tab === "settings"}
-            label="Settings"
-            icon="sliders"
-            onPress={() => setTab("settings")}
-          />
+          ) : tab === "explore" ? (
+            <Explore
+              home={home}
+              apps={store}
+              busy={busy}
+              onInstall={install}
+              onWallpaper={setWallpaper}
+              onChoosePhoto={chooseWallpaperPhoto}
+            />
+          ) : (
+            <Settings
+              token={token}
+              published={published}
+              busy={busy}
+              onSetStatus={setStatus}
+              onLogout={async () => {
+                await clearSessionToken();
+                setToken(null);
+                setHome(null);
+                setPublished([]);
+                setTab("home");
+              }}
+            />
+          )}
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
-function BrandMark({ size }: { size: number }) {
+function SystemNavigation({
+  active,
+  onChange,
+}: {
+  active: Tab;
+  onChange: (tab: Tab) => void;
+}) {
+  const items: { id: Tab; label: string; icon: FeatherName }[] = [
+    { id: "home", label: "Apps", icon: "grid" },
+    { id: "explore", label: "Explore", icon: "compass" },
+    { id: "settings", label: "Profile", icon: "user" },
+  ];
   return (
-    <View
-      style={[
-        local.brandMarkFrame,
-        { width: size, height: size, borderRadius: size / 2 },
-      ]}
-    >
-      <Image
-        source={brandMark}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
-      />
+    <View style={local.systemNavigation}>
+      <View style={local.brandLockup}>
+        <BrandMark size={34} />
+        <Text style={local.brand}>YOB-OS</Text>
+      </View>
+      <View style={local.navItems}>
+        {items.map(item => (
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active === item.id }}
+            key={item.id}
+            onPress={() => onChange(item.id)}
+            style={({ pressed }) => [
+              local.navItem,
+              active === item.id && local.navItemActive,
+              pressed && local.pressed,
+            ]}
+          >
+            <Feather
+              name={item.icon}
+              size={16}
+              color={active === item.id ? colors.cyan : colors.subdued}
+            />
+            <Text
+              style={[local.navText, active === item.id && local.navTextActive]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
 
-function LoadingState() {
-  return (
-    <View style={local.loadingWrap}>
-      <BrandMark size={72} />
-      <ActivityIndicator color={colors.cyan} style={{ marginTop: 22 }} />
-      <Text style={local.loadingTitle}>Preparing your space</Text>
-      <Text style={styles.body}>Securely connecting to your YOB-OS cloud.</Text>
-    </View>
-  );
-}
-
-function Home({
+function Launcher({
   home,
   token,
+  arranging,
+  busy,
   authMode,
   authName,
   authEmail,
   authPassword,
-  busy,
   onAuthMode,
   onName,
   onEmail,
   onPassword,
   onSignIn,
   onLaunch,
+  onMove,
+  onArrange,
   onUpdate,
   onUninstall,
-  onWallpaper,
 }: {
   home: HomeSnapshot | null;
   token: string | null;
+  arranging: boolean;
+  busy: boolean;
   authMode: "login" | "register";
   authName: string;
   authEmail: string;
   authPassword: string;
-  busy: boolean;
   onAuthMode: (mode: "login" | "register") => void;
   onName: (value: string) => void;
   onEmail: (value: string) => void;
   onPassword: (value: string) => void;
   onSignIn: () => void;
-  onLaunch: (id: string) => void;
-  onUpdate: (id: string) => void;
-  onUninstall: (id: string) => void;
-  onWallpaper: (wallpaper: WallpaperId) => void;
+  onLaunch: (appId: string) => void;
+  onMove: (appId: string, direction: -1 | 1) => void;
+  onArrange: () => void;
+  onUpdate: (appId: string) => void;
+  onUninstall: (appId: string) => void;
 }) {
   if (!token) {
     return (
@@ -444,18 +471,12 @@ function Home({
           contentContainerStyle={local.authScroll}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={local.authHalo} />
           <View style={local.authCard}>
-            <View style={local.authBrandRow}>
-              <BrandMark size={54} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.eyebrow}>PRIVATE · SYNCED · YOURS</Text>
-                <Text style={local.authTitle}>A calm place for your apps.</Text>
-              </View>
-            </View>
-            <Text style={[styles.body, { marginTop: 12 }]}>
-              Sign in to carry your installed apps, releases, and visual
-              preferences between web and Android.
+            <BrandMark size={62} />
+            <Text style={local.authHeadline}>Your apps, your space.</Text>
+            <Text style={[styles.body, { textAlign: "center", marginTop: 9 }]}>
+              Sign in to keep your home, wallpapers, and apps available wherever
+              you use YOB-OS.
             </Text>
             <View style={local.authModeRow}>
               <ModeButton
@@ -492,16 +513,16 @@ function Home({
               icon="lock"
               value={authPassword}
               onChangeText={onPassword}
-              placeholder="At least 8 characters"
+              placeholder="Password"
               secureTextEntry
             />
             <Action
               label={
                 busy
-                  ? "Connecting…"
+                  ? "Opening…"
                   : authMode === "login"
-                    ? "Continue securely"
-                    : "Create secure space"
+                    ? "Sign in"
+                    : "Create account"
               }
               icon="arrow-right"
               onPress={onSignIn}
@@ -514,150 +535,164 @@ function Home({
               primary
               full
             />
-            <View style={local.securityNote}>
-              <Feather name="shield" size={14} color={colors.mint} />
-              <Text style={local.securityText}>
-                Your session stays protected on this device.
-              </Text>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
     );
   }
 
+  const photoUri = home?.wallpaperPhotoUrl
+    ? resolveUrl(home.wallpaperPhotoUrl)
+    : undefined;
   const wallpaper =
     wallpapers.find(item => item.id === home?.wallpaper) ?? wallpapers[0];
-  return (
+  const grid = (
     <FlatList
+      key={arranging ? "arrange" : "launcher"}
       data={home?.apps ?? []}
+      numColumns={4}
       keyExtractor={item => item.id}
+      contentContainerStyle={local.launcherGrid}
+      columnWrapperStyle={local.launcherRow}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={local.list}
       ListHeaderComponent={
-        <>
-          <View style={[local.hero, { borderColor: `${wallpaper.color}66` }]}>
-            <View
-              style={[
-                local.heroOrb,
-                { backgroundColor: `${wallpaper.color}24` },
-              ]}
-            />
-            <Text style={styles.eyebrow}>YOUR HOME SPACE</Text>
-            <Text style={local.heroTitle}>
-              Everything you chose,{"\n"}ready when you are.
-            </Text>
-            <Text style={[styles.body, { maxWidth: 280, marginTop: 10 }]}>
-              Your cloud home is synchronized across devices with{" "}
-              {home?.apps.length ?? 0} installed{" "}
-              {home?.apps.length === 1 ? "app" : "apps"}.
-            </Text>
-            <View style={local.wallpaperRow}>
-              {wallpapers.map(item => {
-                const active = home?.wallpaper === item.id;
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Use ${item.label} wallpaper`}
-                    key={item.id}
-                    onPress={() => onWallpaper(item.id)}
-                    style={({ pressed }) => [
-                      local.wallpaper,
-                      active && [
-                        local.wallpaperActive,
-                        { borderColor: item.color },
-                      ],
-                      pressed && local.pressed,
-                    ]}
-                  >
-                    <View
-                      style={[local.swatch, { backgroundColor: item.color }]}
-                    />
-                    <Text
-                      style={[
-                        local.wallpaperText,
-                        active && { color: colors.text },
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+        arranging ? (
+          <View style={local.arrangeBar}>
+            <Text style={local.arrangeText}>Arrange your apps</Text>
+            <Pressable onPress={onArrange} style={local.doneButton}>
+              <Text style={local.doneText}>Done</Text>
+            </Pressable>
           </View>
-          <View style={local.sectionHeading}>
-            <View>
-              <Text style={styles.eyebrow}>INSTALLED</Text>
-              <Text style={local.sectionTitle}>Your app shelf</Text>
-            </View>
-            <View style={local.countPill}>
-              <Text style={local.countText}>{home?.apps.length ?? 0}</Text>
-            </View>
-          </View>
-        </>
+        ) : null
       }
       ListEmptyComponent={
-        <View style={local.emptyState}>
-          <View style={local.emptyIcon}>
-            <Feather name="box" size={24} color={colors.cyan} />
-          </View>
-          <Text style={local.emptyTitle}>Your shelf is ready.</Text>
-          <Text style={[styles.body, { textAlign: "center" }]}>
-            Discover an app in the Play Store and it will appear here.
-          </Text>
+        <View style={local.launcherEmpty}>
+          <Feather name="plus" size={24} color={colors.cyan} />
+          <Text style={local.launcherEmptyText}>Add apps from Explore</Text>
         </View>
       }
-      renderItem={({ item }) => (
-        <View style={local.appCard}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onLaunch(item.id)}
-            style={({ pressed }) => [local.appMain, pressed && local.pressed]}
-          >
-            <AppTile value={item.icon} />
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={local.appName}>
-                {item.name}
-              </Text>
-              <Text style={local.version}>
-                Installed · v{item.installedVersion.version}
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={19} color={colors.subdued} />
-          </Pressable>
-          <View style={local.cardActions}>
-            {item.canUpdate && (
-              <Action
-                label="Update"
-                icon="download"
-                onPress={() => onUpdate(item.id)}
-                primary
-                small
-              />
-            )}
-            <Action
-              label="Remove"
-              icon="trash-2"
-              onPress={() => onUninstall(item.id)}
-              danger
-              small
-            />
-          </View>
-        </View>
+      renderItem={({ item, index }) => (
+        <LauncherTile
+          item={item}
+          index={index}
+          count={home?.apps.length ?? 0}
+          arranging={arranging}
+          busy={busy}
+          onLaunch={onLaunch}
+          onMove={onMove}
+          onLongPress={onArrange}
+          onUpdate={onUpdate}
+          onUninstall={onUninstall}
+        />
       )}
     />
   );
+  return (
+    <View style={[local.launcher, { backgroundColor: wallpaper.accent }]}>
+      {photoUri ? (
+        <ImageBackground
+          source={{ uri: photoUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+      ) : null}
+      {photoUri ? <View style={local.photoScrim} /> : null}
+      {grid}
+    </View>
+  );
 }
 
-function Store({
+function LauncherTile({
+  item,
+  index,
+  count,
+  arranging,
+  busy,
+  onLaunch,
+  onMove,
+  onLongPress,
+  onUpdate,
+  onUninstall,
+}: {
+  item: HomeApp;
+  index: number;
+  count: number;
+  arranging: boolean;
+  busy: boolean;
+  onLaunch: (appId: string) => void;
+  onMove: (appId: string, direction: -1 | 1) => void;
+  onLongPress: () => void;
+  onUpdate: (appId: string) => void;
+  onUninstall: (appId: string) => void;
+}) {
+  return (
+    <View style={local.launcherTileWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          arranging ? `Arrange ${item.name}` : `Open ${item.name}`
+        }
+        onPress={() => (arranging ? undefined : onLaunch(item.id))}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={({ pressed }) => [local.launcherTile, pressed && local.pressed]}
+      >
+        <View style={local.launcherIcon}>
+          <Text style={local.launcherIconText}>{item.icon}</Text>
+          {item.canUpdate ? <View style={local.updateDot} /> : null}
+        </View>
+        <Text numberOfLines={1} style={local.launcherLabel}>
+          {item.name}
+        </Text>
+      </Pressable>
+      {arranging ? (
+        <View style={local.arrangeControls}>
+          <Pressable
+            disabled={busy || index === 0}
+            onPress={() => onMove(item.id, -1)}
+            style={local.arrangeControl}
+          >
+            <Feather name="chevron-left" size={14} color={colors.text} />
+          </Pressable>
+          <Pressable
+            disabled={busy || index === count - 1}
+            onPress={() => onMove(item.id, 1)}
+            style={local.arrangeControl}
+          >
+            <Feather name="chevron-right" size={14} color={colors.text} />
+          </Pressable>
+        </View>
+      ) : item.canUpdate ? (
+        <Pressable onPress={() => onUpdate(item.id)} style={local.updatePill}>
+          <Text style={local.updatePillText}>Update</Text>
+        </Pressable>
+      ) : null}
+      {arranging ? (
+        <Pressable
+          onPress={() => onUninstall(item.id)}
+          style={local.removeMini}
+        >
+          <Feather name="minus" size={12} color={colors.danger} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function Explore({
+  home,
   apps,
   busy,
   onInstall,
+  onWallpaper,
+  onChoosePhoto,
 }: {
+  home: HomeSnapshot | null;
   apps: StoreApp[];
   busy: boolean;
   onInstall: (id: string) => void;
+  onWallpaper: (wallpaper: WallpaperId) => void;
+  onChoosePhoto: () => void;
 }) {
   const [search, setSearch] = useState("");
   const visible = apps.filter(app =>
@@ -670,90 +705,133 @@ function Store({
       data={visible}
       keyExtractor={item => item.id}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={local.list}
+      contentContainerStyle={local.exploreList}
       ListHeaderComponent={
         <>
-          <Text style={styles.eyebrow}>CURATED FOR YOUR CLOUD</Text>
-          <Text style={[styles.title, { marginTop: 8 }]}>
-            Discover new utility.
-          </Text>
+          <Text style={styles.eyebrow}>EXPLORE</Text>
+          <Text style={local.pageTitle}>Make your space yours.</Text>
+          <View style={local.appearanceCard}>
+            <View style={local.appearanceHeading}>
+              <View>
+                <Text style={local.cardTitle}>Appearance</Text>
+                <Text style={local.cardSubtle}>
+                  Choose a color or a personal photo.
+                </Text>
+              </View>
+              <Feather name="image" size={19} color={colors.cyan} />
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={local.wallpaperChoices}
+            >
+              {wallpapers.map(item => {
+                const active =
+                  !home?.wallpaperPhotoUrl && home?.wallpaper === item.id;
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => onWallpaper(item.id)}
+                    style={({ pressed }) => [
+                      local.wallpaperChoice,
+                      {
+                        backgroundColor: item.accent,
+                        borderColor: active ? item.color : colors.border,
+                      },
+                      pressed && local.pressed,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        local.wallpaperDot,
+                        { backgroundColor: item.color },
+                      ]}
+                    />
+                    <Text style={local.wallpaperChoiceText}>{item.label}</Text>
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                onPress={onChoosePhoto}
+                style={({ pressed }) => [
+                  local.photoChoice,
+                  home?.wallpaperPhotoUrl && local.photoChoiceActive,
+                  pressed && local.pressed,
+                ]}
+              >
+                <Feather name="plus" size={17} color={colors.text} />
+                <Text style={local.wallpaperChoiceText}>Photo</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+          <Text style={[styles.eyebrow, { marginTop: 25 }]}>APP LIBRARY</Text>
           <View style={local.searchWrap}>
             <Feather name="search" size={18} color={colors.subdued} />
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search your Play Store"
+              placeholder="Search apps"
               placeholderTextColor={colors.subdued}
               style={local.searchInput}
             />
             {search ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setSearch("")}
-                hitSlop={10}
-              >
+              <Pressable onPress={() => setSearch("")}>
                 <Feather name="x" size={18} color={colors.muted} />
               </Pressable>
             ) : null}
           </View>
-          <View style={local.storeIntro}>
-            <View style={local.storeIntroIcon}>
-              <Feather name="star" size={18} color={colors.mint} />
-            </View>
-            <Text style={local.storeIntroText}>
-              {visible.length} {visible.length === 1 ? "app" : "apps"} available
-              in your personal catalog
-            </Text>
-          </View>
         </>
       }
       renderItem={({ item }) => (
-        <View style={local.storeCard}>
-          <AppTile value={item.icon} large />
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={local.appName}>
-              {item.name}
-            </Text>
-            <Text style={local.version}>
-              Version {item.currentVersion?.version ?? "—"}
-            </Text>
-            <Text numberOfLines={3} style={[styles.body, { marginTop: 9 }]}>
-              {item.description}
-            </Text>
-            <Action
-              label={busy ? "Working…" : "Install"}
-              icon="download-cloud"
-              onPress={() => onInstall(item.id)}
-              disabled={busy}
-              primary
-              small
-            />
-          </View>
-        </View>
+        <ExploreCard app={item} busy={busy} onInstall={onInstall} />
       )}
       ListEmptyComponent={
-        <View style={local.noResults}>
-          <Feather name="search" size={22} color={colors.subdued} />
-          <Text style={[styles.body, { marginTop: 12 }]}>
-            No apps match that search.
-          </Text>
-        </View>
+        <Text style={[styles.body, { textAlign: "center", marginTop: 34 }]}>
+          No apps match that search.
+        </Text>
       }
     />
   );
 }
 
+function ExploreCard({
+  app,
+  busy,
+  onInstall,
+}: {
+  app: StoreApp;
+  busy: boolean;
+  onInstall: (appId: string) => void;
+}) {
+  return (
+    <View style={local.exploreCard}>
+      <AppTile value={app.icon} large />
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={local.appName}>
+          {app.name}
+        </Text>
+        <Text numberOfLines={2} style={local.appDescription}>
+          {app.description}
+        </Text>
+        <Action
+          label={busy ? "Working…" : "Add to apps"}
+          icon="plus"
+          onPress={() => onInstall(app.id)}
+          disabled={busy}
+          small
+        />
+      </View>
+    </View>
+  );
+}
+
 function Settings({
-  apiBaseUrl,
-  setApiBaseUrl,
   token,
   published,
   busy,
   onSetStatus,
   onLogout,
 }: {
-  apiBaseUrl: string;
-  setApiBaseUrl: (value: string) => void;
   token: string | null;
   published: StoreApp[];
   busy: boolean;
@@ -764,79 +842,56 @@ function Settings({
     <FlatList
       data={published}
       keyExtractor={item => item.id}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={local.list}
+      contentContainerStyle={local.settingsList}
       ListHeaderComponent={
         <>
-          <Text style={styles.eyebrow}>CONTROL CENTER</Text>
-          <Text style={[styles.title, { marginTop: 8 }]}>
-            Your cloud settings.
-          </Text>
-          <View style={local.connectionCard}>
-            <View style={local.connectionRow}>
-              <View style={local.connectionIcon}>
-                <Feather name="cloud" size={20} color={colors.cyan} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={local.connectionTitle}>YOB-OS cloud</Text>
-                <Text style={local.connectionState}>
-                  {token ? "Signed in and encrypted" : "Ready to connect"}
-                </Text>
-              </View>
-              <View style={local.livePill}>
-                <View style={local.liveDot} />
-                <Text style={local.liveText}>LIVE</Text>
-              </View>
+          <Text style={styles.eyebrow}>PROFILE</Text>
+          <Text style={local.pageTitle}>Your account.</Text>
+          <View style={local.profileCard}>
+            <View style={local.profileGlyph}>
+              <Feather name="user" size={22} color={colors.cyan} />
             </View>
-            <Text style={local.fieldLabel}>Cloud service URL</Text>
-            <View style={local.urlField}>
-              <Feather name="link" size={17} color={colors.subdued} />
-              <TextInput
-                value={apiBaseUrl}
-                onChangeText={setApiBaseUrl}
-                placeholder="https://yob-os.vercel.app"
-                placeholderTextColor={colors.subdued}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                style={local.urlInput}
-              />
+            <View style={{ flex: 1 }}>
+              <Text style={local.cardTitle}>
+                {token ? "Signed in" : "Guest"}
+              </Text>
+              <Text style={local.cardSubtle}>
+                {token
+                  ? "Your preferences follow your account."
+                  : "Sign in to save your apps and appearance."}
+              </Text>
             </View>
-            <Text style={local.helper}>
-              Production builds use yob-os.vercel.app by default. Change this
-              only for development or recovery.
-            </Text>
-            {token && (
-              <Action
-                label="Sign out from this device"
-                icon="log-out"
+            {token ? (
+              <Pressable
                 onPress={() => void onLogout()}
-                danger
-                full
-              />
-            )}
+                style={local.signOutButton}
+              >
+                <Text style={local.signOutText}>Sign out</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <View style={local.sectionHeading}>
-            <View>
-              <Text style={styles.eyebrow}>PUBLISHER SPACE</Text>
-              <Text style={local.sectionTitle}>Your published apps</Text>
-            </View>
-            <Feather name="send" size={19} color={colors.cyan} />
-          </View>
+          {token ? (
+            <>
+              <Text style={[styles.eyebrow, { marginTop: 27 }]}>
+                PUBLISHED APPS
+              </Text>
+              <Text style={local.sectionTitle}>Your listings</Text>
+            </>
+          ) : null}
         </>
       }
       renderItem={({ item }) => (
         <View style={local.publisherCard}>
           <View style={{ flex: 1 }}>
             <Text style={local.appName}>{item.name}</Text>
-            <Text style={local.version}>
+            <Text style={local.cardSubtle}>
               v{item.currentVersion?.version ?? "—"} · {item.status}
             </Text>
           </View>
-          {item.status !== "deleted" && (
-            <View style={local.cardActions}>
+          {item.status !== "deleted" ? (
+            <View style={local.publisherActions}>
               <Action
-                label="Deprecate"
+                label="Pause"
                 onPress={() => onSetStatus(item.id, "deprecated")}
                 disabled={busy}
                 small
@@ -849,35 +904,21 @@ function Settings({
                 small
               />
             </View>
-          )}
+          ) : null}
         </View>
       )}
       ListEmptyComponent={
         token ? (
-          <View style={local.publisherEmpty}>
-            <Feather name="pen-tool" size={21} color={colors.subdued} />
-            <Text style={[styles.body, { marginTop: 10 }]}>
-              Your published listings will appear here.
-            </Text>
-          </View>
+          <Text style={[styles.body, { marginTop: 15 }]}>
+            Published apps will appear here.
+          </Text>
         ) : null
       }
     />
   );
 }
 
-function Player({
-  app,
-  apiBaseUrl,
-  onExit,
-}: {
-  app: LaunchPayload;
-  apiBaseUrl: string;
-  onExit: () => void;
-}) {
-  const source = app.htmlUrl.startsWith("http")
-    ? app.htmlUrl
-    : `${apiBaseUrl.replace(/\/$/, "")}${app.htmlUrl}`;
+function Player({ app, onExit }: { app: LaunchPayload; onExit: () => void }) {
   const loaded = useRef(false);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -891,27 +932,25 @@ function Player({
   }, [onExit]);
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
+      <SafeAreaView
+        style={styles.screen}
+        edges={["top", "left", "right", "bottom"]}
+      >
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
         <View style={local.playerHeader}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onExit}
-            hitSlop={8}
-            style={local.backButton}
-          >
+          <Pressable onPress={onExit} style={local.backButton}>
             <Feather name="arrow-left" size={20} color={colors.text} />
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text numberOfLines={1} style={local.appName}>
               {app.name}
             </Text>
-            <Text style={local.version}>Protected player · v{app.version}</Text>
+            <Text style={local.cardSubtle}>App session</Text>
           </View>
-          <Action label="Exit" icon="x" onPress={onExit} small />
+          <Action label="Close" icon="x" onPress={onExit} small />
         </View>
         <WebView
-          source={{ uri: source }}
+          source={{ uri: resolveUrl(app.htmlUrl) }}
           javaScriptEnabled
           domStorageEnabled={false}
           javaScriptCanOpenWindowsAutomatically={false}
@@ -933,6 +972,32 @@ function Player({
   );
 }
 
+function LoadingState() {
+  return (
+    <View style={local.loadingWrap}>
+      <BrandMark size={70} />
+      <ActivityIndicator color={colors.cyan} style={{ marginTop: 20 }} />
+      <Text style={local.loadingTitle}>Opening your space</Text>
+    </View>
+  );
+}
+
+function BrandMark({ size }: { size: number }) {
+  return (
+    <View
+      style={[
+        local.brandMark,
+        { width: size, height: size, borderRadius: size / 2 },
+      ]}
+    >
+      <Image
+        source={brandMark}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+      />
+    </View>
+  );
+}
+
 function Field({
   label,
   icon,
@@ -944,7 +1009,7 @@ function Field({
   icon: FeatherName;
   value: string;
   onChangeText: (value: string) => void;
-} & Omit<React.ComponentProps<typeof TextInput>, "value" | "onChangeText">) {
+} & Omit<ComponentProps<typeof TextInput>, "value" | "onChangeText">) {
   return (
     <View style={local.fieldWrap}>
       <Text style={local.fieldLabel}>{label}</Text>
@@ -973,8 +1038,6 @@ function ModeButton({
 }) {
   return (
     <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
       onPress={onPress}
       style={({ pressed }) => [
         local.modeButton,
@@ -999,40 +1062,6 @@ function AppTile({ value, large = false }: { value: string; large?: boolean }) {
   );
 }
 
-function TabButton({
-  active,
-  label,
-  icon,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  icon: FeatherName;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        local.tab,
-        active && local.tabActive,
-        pressed && local.pressed,
-      ]}
-    >
-      <Feather
-        name={icon}
-        size={18}
-        color={active ? colors.cyan : colors.subdued}
-      />
-      <Text style={[local.tabText, active && local.tabTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function Action({
   label,
   icon,
@@ -1054,7 +1083,6 @@ function Action({
 }) {
   return (
     <Pressable
-      accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -1067,13 +1095,13 @@ function Action({
         pressed && !disabled && local.pressed,
       ]}
     >
-      {icon && (
+      {icon ? (
         <Feather
           name={icon}
           size={small ? 14 : 16}
           color={primary ? colors.ink : danger ? colors.danger : colors.text}
         />
-      )}
+      ) : null}
       <Text
         style={[
           local.actionText,
@@ -1088,102 +1116,210 @@ function Action({
   );
 }
 
+function resolveUrl(value: string) {
+  return value.startsWith("http") ? value : `${configuredApi}${value}`;
+}
+
+function isPhotoMime(value: string | null | undefined): value is PhotoMime {
+  return (
+    value === "image/jpeg" || value === "image/png" || value === "image/webp"
+  );
+}
+
 const local = StyleSheet.create({
-  header: {
-    height: 76,
-    paddingHorizontal: 20,
+  content: { flex: 1 },
+  systemNavigation: {
+    minHeight: 62,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.bg,
   },
-  brandLockup: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brandMarkFrame: {
+  brandLockup: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandMark: {
     overflow: "hidden",
     backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },
-  brandKicker: {
-    color: colors.subdued,
-    fontSize: 8,
-    letterSpacing: 1.25,
-    fontWeight: "800",
-  },
   brand: {
     color: colors.text,
-    fontSize: 20,
-    letterSpacing: 1.5,
-    lineHeight: 23,
+    letterSpacing: 1.15,
+    fontSize: 15,
     fontWeight: "900",
   },
-  statusPill: {
-    flexDirection: "row",
+  navItems: { flexDirection: "row", alignItems: "center", gap: 2 },
+  navItem: {
     alignItems: "center",
-    gap: 7,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 99,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { color: colors.text, fontSize: 11, fontWeight: "800" },
+  navItemActive: { backgroundColor: "rgba(69, 216, 255, 0.1)" },
+  navText: { color: colors.subdued, fontSize: 9, fontWeight: "800" },
+  navTextActive: { color: colors.cyan },
   pressed: { opacity: 0.76, transform: [{ scale: 0.985 }] },
-  disabled: { opacity: 0.48 },
-  loadingWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 28,
-  },
+  disabled: { opacity: 0.46 },
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingTitle: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
-    marginTop: 16,
-    marginBottom: 5,
+    marginTop: 14,
   },
-  list: { paddingHorizontal: 20, paddingBottom: 112, gap: 12 },
-  authScroll: {
+  launcher: { flex: 1 },
+  photoScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(4, 10, 20, 0.42)",
+  },
+  launcherGrid: {
+    paddingHorizontal: 14,
+    paddingTop: 24,
+    paddingBottom: 34,
     flexGrow: 1,
+  },
+  launcherRow: { justifyContent: "flex-start" },
+  launcherTileWrap: {
+    width: "25%",
+    alignItems: "center",
+    minHeight: 110,
+    position: "relative",
+    marginBottom: 13,
+  },
+  launcherTile: {
+    alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 3,
+    paddingTop: 4,
+  },
+  launcherIcon: {
+    alignItems: "center",
     justifyContent: "center",
-    padding: 20,
-    paddingBottom: 105,
+    width: 60,
+    height: 60,
+    borderRadius: 19,
+    backgroundColor: "rgba(9, 26, 45, 0.86)",
+    borderColor: "rgba(255,255,255,0.2)",
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  authHalo: {
+  launcherIconText: { color: colors.text, fontSize: 29 },
+  launcherLabel: {
+    color: colors.white,
+    fontSize: 11,
+    maxWidth: 74,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 7,
+    textShadowColor: "rgba(0,0,0,0.75)",
+    textShadowRadius: 4,
+  },
+  updateDot: {
     position: "absolute",
-    top: 28,
-    alignSelf: "center",
-    height: 230,
-    width: 230,
-    borderRadius: 115,
-    backgroundColor: "rgba(69, 216, 255, 0.06)",
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    right: -3,
+    top: -3,
+    backgroundColor: colors.mint,
+    borderWidth: 2,
+    borderColor: colors.bg,
   },
+  updatePill: {
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 99,
+    backgroundColor: "rgba(98, 230, 188, 0.94)",
+  },
+  updatePillText: { color: colors.ink, fontSize: 8, fontWeight: "900" },
+  arrangeBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 15,
+    padding: 11,
+    marginBottom: 18,
+    backgroundColor: "rgba(6, 17, 31, 0.75)",
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  arrangeText: { color: colors.text, fontSize: 12, fontWeight: "800" },
+  doneButton: {
+    backgroundColor: colors.cyan,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+  doneText: { color: colors.ink, fontSize: 11, fontWeight: "900" },
+  arrangeControls: { flexDirection: "row", gap: 3, marginTop: 5 },
+  arrangeControl: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 25,
+    height: 22,
+    borderRadius: 7,
+    backgroundColor: "rgba(6, 17, 31, 0.82)",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  removeMini: {
+    position: "absolute",
+    top: 0,
+    right: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(6, 17, 31, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 146, 162, 0.55)",
+  },
+  launcherEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    minHeight: 380,
+    gap: 10,
+  },
+  launcherEmptyText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: "800",
+    textShadowColor: "rgba(0,0,0,0.8)",
+    textShadowRadius: 4,
+  },
+  authScroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
   authCard: {
     ...styles.card,
-    padding: 22,
+    alignItems: "center",
+    padding: 23,
     backgroundColor: colors.bgElevated,
     borderColor: colors.borderStrong,
-    overflow: "hidden",
   },
-  authBrandRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  authTitle: {
+  authHeadline: {
     color: colors.text,
-    fontSize: 22,
-    lineHeight: 27,
-    letterSpacing: -0.3,
+    fontSize: 24,
+    letterSpacing: -0.4,
     fontWeight: "800",
-    marginTop: 4,
+    marginTop: 17,
   },
   authModeRow: {
     flexDirection: "row",
-    padding: 4,
+    width: "100%",
     gap: 4,
+    padding: 4,
+    marginTop: 22,
     backgroundColor: colors.surfaceMuted,
     borderRadius: 14,
-    marginTop: 22,
   },
   modeButton: {
     flex: 1,
@@ -1194,13 +1330,12 @@ const local = StyleSheet.create({
   modeButtonActive: { backgroundColor: colors.surfaceRaised },
   modeText: { color: colors.subdued, fontSize: 12, fontWeight: "800" },
   modeTextActive: { color: colors.text },
-  fieldWrap: { marginTop: 15 },
+  fieldWrap: { width: "100%", marginTop: 14 },
   fieldLabel: {
     color: colors.muted,
     fontSize: 11,
     fontWeight: "800",
     marginBottom: 7,
-    letterSpacing: 0.25,
   },
   inputShell: {
     height: 52,
@@ -1214,101 +1349,82 @@ const local = StyleSheet.create({
     backgroundColor: "rgba(6, 17, 31, 0.62)",
   },
   authInput: { flex: 1, color: colors.text, fontSize: 14, paddingVertical: 0 },
-  securityNote: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 7,
-    marginTop: 16,
+  exploreList: {
+    paddingHorizontal: 18,
+    paddingTop: 21,
+    paddingBottom: 28,
+    gap: 12,
   },
-  securityText: { color: colors.muted, fontSize: 11, fontWeight: "600" },
-  hero: {
-    ...styles.card,
-    padding: 21,
-    marginBottom: 12,
-    backgroundColor: colors.bgElevated,
-    overflow: "hidden",
-  },
-  heroOrb: {
-    position: "absolute",
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    right: -55,
-    top: -82,
-  },
-  heroTitle: {
+  pageTitle: {
     color: colors.text,
-    fontSize: 25,
-    lineHeight: 30,
-    letterSpacing: -0.5,
+    fontSize: 27,
+    letterSpacing: -0.55,
     fontWeight: "800",
-    marginTop: 8,
+    marginTop: 6,
   },
-  wallpaperRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-    marginTop: 21,
+  appearanceCard: {
+    ...styles.card,
+    padding: 16,
+    marginTop: 20,
+    backgroundColor: colors.bgElevated,
   },
-  wallpaper: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    borderRadius: 99,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(5, 13, 25, 0.25)",
-  },
-  wallpaperActive: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderWidth: 1.2,
-  },
-  swatch: { width: 8, height: 8, borderRadius: 4 },
-  wallpaperText: { color: colors.muted, fontSize: 11, fontWeight: "700" },
-  sectionHeading: {
+  appearanceHeading: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 4,
   },
-  sectionTitle: {
+  cardTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
+  cardSubtle: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
+    marginTop: 3,
+  },
+  wallpaperChoices: { gap: 8, marginTop: 14 },
+  wallpaperChoice: {
+    minWidth: 82,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 13,
+    borderWidth: 1,
+    gap: 7,
+  },
+  wallpaperDot: { height: 9, width: 9, borderRadius: 5 },
+  wallpaperChoiceText: { color: colors.text, fontSize: 10, fontWeight: "800" },
+  photoChoice: {
+    minWidth: 82,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 7,
+    backgroundColor: colors.surfaceRaised,
+  },
+  photoChoiceActive: {
+    borderColor: colors.cyan,
+    backgroundColor: "rgba(69, 216, 255, 0.14)",
+  },
+  searchWrap: {
+    marginTop: 12,
+    height: 51,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  searchInput: {
+    flex: 1,
     color: colors.text,
-    fontSize: 20,
-    letterSpacing: -0.35,
-    fontWeight: "800",
-    marginTop: 3,
+    fontSize: 14,
+    paddingVertical: 0,
   },
-  countPill: {
-    minWidth: 30,
-    alignItems: "center",
-    backgroundColor: "rgba(69, 216, 255, 0.12)",
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 99,
-  },
-  countText: { color: colors.cyan, fontSize: 12, fontWeight: "900" },
-  emptyState: {
-    ...styles.card,
-    alignItems: "center",
-    gap: 9,
-    padding: 34,
-    marginTop: 3,
-  },
-  emptyIcon: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 50,
-    height: 50,
-    borderRadius: 17,
-    backgroundColor: "rgba(69, 216, 255, 0.1)",
-  },
-  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: "800" },
-  appCard: { ...styles.card, padding: 14, gap: 13 },
-  appMain: { flexDirection: "row", alignItems: "center", gap: 13 },
+  exploreCard: { ...styles.card, flexDirection: "row", gap: 13, padding: 14 },
   appTile: {
     width: 46,
     height: 46,
@@ -1321,139 +1437,48 @@ const local = StyleSheet.create({
   },
   appTileLarge: { width: 52, height: 52, borderRadius: 17 },
   appTileText: { color: colors.text, fontSize: 22 },
-  appName: { color: colors.text, fontSize: 15, fontWeight: "800" },
-  version: {
-    color: colors.subdued,
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: "600",
+  appName: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  appDescription: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 5,
   },
-  cardActions: { flexDirection: "row", gap: 8 },
-  action: {
-    marginTop: 15,
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(255, 255, 255, 0.035)",
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    borderRadius: 12,
+  settingsList: {
+    paddingHorizontal: 18,
+    paddingTop: 21,
+    paddingBottom: 28,
+    gap: 12,
   },
-  actionPrimary: { backgroundColor: colors.cyan, borderColor: colors.cyan },
-  actionDanger: {
-    borderColor: "rgba(255, 146, 162, 0.25)",
-    backgroundColor: colors.dangerSurface,
-  },
-  actionSmall: {
-    marginTop: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  actionFull: { alignSelf: "stretch", marginTop: 20 },
-  actionText: { color: colors.text, fontSize: 12, fontWeight: "800" },
-  actionTextSmall: { fontSize: 11 },
-  searchWrap: {
-    marginTop: 20,
-    height: 52,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  storeIntro: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 14,
-    marginBottom: 8,
-  },
-  storeIntroIcon: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: "rgba(98, 230, 188, 0.1)",
-  },
-  storeIntroText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
-  storeCard: { ...styles.card, flexDirection: "row", gap: 13, padding: 15 },
-  noResults: { alignItems: "center", paddingTop: 44 },
-  connectionCard: {
+  profileCard: {
     ...styles.card,
-    padding: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
     marginTop: 20,
     backgroundColor: colors.bgElevated,
-    borderColor: colors.borderStrong,
   },
-  connectionRow: { flexDirection: "row", alignItems: "center", gap: 11 },
-  connectionIcon: {
+  profileGlyph: {
     alignItems: "center",
     justifyContent: "center",
-    height: 40,
-    width: 40,
-    borderRadius: 13,
-    backgroundColor: "rgba(69, 216, 255, 0.1)",
-  },
-  connectionTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
-  connectionState: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 3,
-  },
-  livePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: 99,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    backgroundColor: "rgba(98, 230, 188, 0.1)",
-  },
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.mint,
-  },
-  liveText: {
-    color: colors.mint,
-    fontSize: 8,
-    letterSpacing: 0.8,
-    fontWeight: "900",
-  },
-  urlField: {
-    height: 52,
-    paddingHorizontal: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
+    width: 43,
+    height: 43,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(6, 17, 31, 0.62)",
+    backgroundColor: "rgba(69, 216, 255, 0.12)",
   },
-  urlInput: { flex: 1, color: colors.text, fontSize: 13, paddingVertical: 0 },
-  helper: {
-    color: colors.subdued,
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 10,
+  signOutButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 9,
+    backgroundColor: colors.dangerSurface,
+  },
+  signOutText: { color: colors.danger, fontSize: 11, fontWeight: "800" },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "800",
+    marginTop: 4,
   },
   publisherCard: {
     ...styles.card,
@@ -1462,38 +1487,32 @@ const local = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  publisherEmpty: {
-    ...styles.card,
-    alignItems: "center",
-    padding: 25,
-    marginTop: 4,
-  },
-  tabBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 12,
-    backgroundColor: "rgba(6, 17, 31, 0.97)",
-    borderTopWidth: 1,
-    borderColor: colors.border,
+  publisherActions: { flexDirection: "row", gap: 7 },
+  action: {
     flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  tab: {
-    flex: 1,
     alignItems: "center",
-    gap: 4,
-    borderRadius: 14,
-    paddingVertical: 8,
+    justifyContent: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 12,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
-  tabActive: { backgroundColor: "rgba(107, 130, 255, 0.13)" },
-  tabText: { color: colors.subdued, fontSize: 10, fontWeight: "800" },
-  tabTextActive: { color: colors.cyan },
+  actionPrimary: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  actionDanger: {
+    borderColor: "rgba(255, 146, 162, 0.28)",
+    backgroundColor: colors.dangerSurface,
+  },
+  actionSmall: { marginTop: 9, paddingHorizontal: 10, paddingVertical: 7 },
+  actionFull: { alignSelf: "stretch", marginTop: 19 },
+  actionText: { color: colors.text, fontSize: 12, fontWeight: "800" },
+  actionTextSmall: { fontSize: 11 },
   playerHeader: {
-    minHeight: 68,
+    minHeight: 66,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -1505,8 +1524,8 @@ const local = StyleSheet.create({
   backButton: {
     alignItems: "center",
     justifyContent: "center",
-    height: 38,
     width: 38,
+    height: 38,
     borderRadius: 12,
     backgroundColor: colors.surfaceRaised,
   },
