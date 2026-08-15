@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ComponentProps,
 } from "react";
@@ -930,7 +929,6 @@ function Settings({
 }
 
 function Player({ app, onExit }: { app: LaunchPayload; onExit: () => void }) {
-  const loaded = useRef(false);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
@@ -963,19 +961,13 @@ function Player({ app, onExit }: { app: LaunchPayload; onExit: () => void }) {
         <WebView
           source={{ uri: resolveUrl(app.htmlUrl) }}
           javaScriptEnabled
-          domStorageEnabled={false}
+          domStorageEnabled
           javaScriptCanOpenWindowsAutomatically={false}
           setSupportMultipleWindows={false}
           allowFileAccess={false}
           allowUniversalAccessFromFileURLs={false}
           mixedContentMode="never"
           originWhitelist={["https://*"]}
-          onLoadEnd={() => {
-            loaded.current = true;
-          }}
-          onShouldStartLoadWithRequest={request =>
-            !loaded.current && request.navigationType === "other"
-          }
           style={{ flex: 1, backgroundColor: colors.white }}
         />
       </SafeAreaView>
