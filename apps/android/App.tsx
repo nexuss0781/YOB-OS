@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as ImagePicker from "expo-image-picker";
+import * as SecureStore from "expo-secure-store";
 import {
   useCallback,
   useEffect,
@@ -49,6 +50,8 @@ type PhotoMime = "image/jpeg" | "image/png" | "image/webp";
 
 const brandMark = require("./assets/yob-os-icon.png");
 const DEFAULT_APP_ICON = "browser";
+const HOME_CACHE_KEY = "yob-os-home-cache";
+const STORE_CACHE_KEY = "yob-os-store-cache";
 const configuredApi =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined)?.replace(
     /\/$/,
@@ -65,6 +68,52 @@ const wallpapers: {
   { id: "dusk", label: "Dusk", color: "#D391FF", accent: "#36224A" },
   { id: "void", label: "Void", color: "#6C7DFF", accent: "#171A42" },
 ];
+
+function cacheUserKey(token: string) {
+  return token.slice(-20);
+}
+
+async function readCachedHome(token: string) {
+  try {
+    const raw = await SecureStore.getItemAsync(HOME_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as {
+      tokenKey?: string;
+      snapshot?: HomeSnapshot;
+    };
+    return cached.tokenKey === cacheUserKey(token) ? cached.snapshot ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedHome(token: string, snapshot: HomeSnapshot) {
+  try {
+    await SecureStore.setItemAsync(
+      HOME_CACHE_KEY,
+      JSON.stringify({ tokenKey: cacheUserKey(token), snapshot })
+    );
+  } catch {
+    // Cache is best-effort; never block the native UI on persistence.
+  }
+}
+
+async function readCachedStore() {
+  try {
+    const raw = await SecureStore.getItemAsync(STORE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as StoreApp[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedStore(store: StoreApp[]) {
+  try {
+    await SecureStore.setItemAsync(STORE_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    // Cache is best-effort; never block the native UI on persistence.
+  }
+}
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -87,35 +136,55 @@ export default function App() {
   );
   const refresh = useCallback(async () => {
     if (!api) return;
-    setLoading(true);
     try {
-      const listings = await api.yob.store.list.query({});
-      setStore(listings);
-      if (token) {
-        setHome(await api.yob.home.snapshot.query());
-        setPublished(await api.yob.publisher.list.query());
-      } else {
+      const storeRequest = api.yob.store.list.query({});
+      if (!token) {
+        const listings = await storeRequest;
+        setStore(listings);
+        void writeCachedStore(listings);
         setHome(null);
         setPublished([]);
+        return;
       }
+
+      const [listings, nextHome, nextPublished] = await Promise.all([
+        storeRequest,
+        api.yob.home.snapshot.query(),
+        api.yob.publisher.list.query(),
+      ]);
+      setStore(listings);
+      setHome(nextHome);
+      setPublished(nextPublished);
+      void writeCachedStore(listings);
+      void writeCachedHome(token, nextHome);
     } catch (error) {
-      Alert.alert(
-        "Unable to refresh",
-        error instanceof Error ? error.message : "Please try again shortly."
-      );
-    } finally {
-      setLoading(false);
+      // Startup is offline-first: retain cached native state and avoid blocking
+      // the shell with an alert when the network is slow or temporarily down.
+      console.warn("YOB-OS background refresh failed", error);
     }
   }, [api, token]);
 
   useEffect(() => {
-    void getSessionToken()
-      .then(setToken)
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    void (async () => {
+      const storedToken = await getSessionToken();
+      const [cachedHome, cachedStore] = await Promise.all([
+        storedToken ? readCachedHome(storedToken) : Promise.resolve(null),
+        readCachedStore(),
+      ]);
+      if (cancelled) return;
+      setToken(storedToken);
+      if (cachedHome) setHome(cachedHome);
+      if (cachedStore) setStore(cachedStore);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!loading) void refresh();
+  }, [loading, refresh]);
 
   const perform = async (
     work: () => Promise<void>,
@@ -555,6 +624,11 @@ function Launcher({
       contentContainerStyle={local.launcherGrid}
       columnWrapperStyle={local.launcherRow}
       showsVerticalScrollIndicator={false}
+      removeClippedSubviews
+      initialNumToRender={12}
+      maxToRenderPerBatch={8}
+      windowSize={5}
+      updateCellsBatchingPeriod={16}
       ListHeaderComponent={
         arranging ? (
           <View style={local.arrangeBar}>
@@ -643,6 +717,7 @@ function LauncherTile({
               source={{ uri: item.icon }}
               style={local.launcherIconImage}
               resizeMode="cover"
+              fadeDuration={0}
             />
           ) : item.icon === DEFAULT_APP_ICON ? (
             <Feather name="globe" size={30} color={colors.cyan} />
@@ -715,6 +790,11 @@ function Explore({
       data={visible}
       keyExtractor={item => item.id}
       showsVerticalScrollIndicator={false}
+      removeClippedSubviews
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      windowSize={5}
+      updateCellsBatchingPeriod={16}
       contentContainerStyle={local.exploreList}
       ListHeaderComponent={
         <>
