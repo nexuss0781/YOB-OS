@@ -15,3 +15,34 @@
 - [x] Extend the lifecycle integration test to verify the same account sees installation, update, and wallpaper state from a second client session.
 - [x] Add and run a repository lint command for the cloud project, then document the exact validated scope of browser and Android runtime checks.
 - [x] Create and push the private nexuss0781/YOB-OS repository and save the final publish-ready project checkpoint.
+
+- [x] Prepare this independent YOB-OS copy for a Vercel Node.js deployment and document the required deployment configuration.
+- [x] Validate the deployable build, save a new project checkpoint, and guide publication under the supported Vercel hostname.
+
+- [x] Locate the user's Paradox-db repository and apply its default database integration guidance to this independent YOB-OS copy.
+- [x] Configure the Paradox database without a custom Telegram channel, securely set its required credentials, and validate the connection.
+
+- [x] Replace the YOB-OS MySQL/Drizzle database access layer with the Paradox-DB encrypted SQLite and gateway integration.
+- [x] Preserve all existing YOB-OS data contracts and verify authenticated app, installation, version, and preference workflows against Paradox-DB.
+
+- [x] Implement Paradox synchronization per request with automatic sync daemons disabled, preserving stateless hosting and leaving custom Telegram channels unset.
+
+- [x] Sign in to the default Paradox gateway, obtain the application API token and passphrase, and store only the resulting runtime credentials securely.
+
+- [x] Create a dedicated default-gateway Paradox account for YOB-OS and retain only its generated API token and encryption passphrase as runtime secrets.
+
+- [x] Verify that the application runtime reads only `PARADOX_GATEWAY_URL`, `PARADOX_API_KEY`, and `PARADOX_PASSPHRASE`, without requiring account email or password values.
+
+- [x] Locate the YOB-OS Vercel project and add the required Paradox production environment variables without account or Telegram channel values.
+
+- [x] Use the terminal-authenticated Vercel CLI to add and verify the three required Paradox production variables.
+
+- [x] Obtain a Vercel CLI access token with access to the YOB-OS team if the terminal session remains unauthenticated.
+
+- [ ] Verify the Vercel Node.js configuration, resolve the current deployment failure, and prepare YOB-OS for production publication.
+
+- [x] Add a Vercel-recognized Node.js entrypoint so the Express application is discovered during Vercel builds.
+
+- [ ] Trigger a Vercel redeployment from the updated source and confirm the Node preset recognizes `server.ts` without an entrypoint error.
+
+- [ ] Commit and push the Vercel Node entrypoint fix to `nexuss0781/YOB-OS` so the connected Vercel project receives the updated source.

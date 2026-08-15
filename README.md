@@ -10,7 +10,7 @@
 | Web Play Store   | Public discovery, searching, app details, authenticated installation, and update actions for installed applications.                                                             |
 | Publisher Studio | Authenticated publishing of standalone HTML files, immutable version uploads, release notes, deprecation, and deletion from discovery.                                           |
 | Android client   | A native Expo client with synchronized Home, Play Store, wallpaper, installs, updates, removals, publisher lifecycle controls, native sign-in, and a constrained WebView player. |
-| Cloud API        | A tRPC backend with Manus OAuth, a relational database for metadata and personal state, and object storage for HTML package bytes.                                               |
+| Cloud API        | A tRPC backend with Manus OAuth, a request-scoped Paradox encrypted SQLite database for metadata and personal state, and object storage for HTML package bytes.                  |
 
 ## Core lifecycle
 
@@ -35,8 +35,7 @@ When a user installs an app, YOB-OS writes a per-user installation record that p
 
 ```text
 client/                 React web client and operating-system-style interface
-server/                 tRPC routes, storage workflow, native OAuth handoff, domain service
-drizzle/                MySQL/TiDB schema and reviewed migration files
+server/                 tRPC routes, Paradox data layer, storage workflow, native OAuth handoff, domain service
 shared/                 Package validation and domain constants
 apps/android/           Expo Android client
 docs/architecture.md    Product architecture and security design
@@ -45,7 +44,7 @@ docs/android-client.md  Android configuration and native player details
 
 ## Local development
 
-The cloud project uses its managed environment variables for database access, OAuth, and S3-compatible storage. No manual server secret is committed to the repository.
+The cloud project uses managed environment variables for Paradox database access, OAuth, and S3-compatible storage. No manual server secret is committed to the repository. Each request pulls the latest encrypted Paradox snapshot, executes the required SQLite work, pushes writes when needed, and closes the connection; the automatic sync daemon is intentionally disabled.
 
 ```bash
 pnpm install
@@ -64,12 +63,13 @@ For development recovery, the Android Settings tab also lets the user provide th
 
 ## Validation
 
-The final validation run completed all of the following checks.
+The final validation run completed the local checks below. The Paradox credential and full cloud-lifecycle validations are intentionally network-dependent and run through `pnpm test:paradox-live`; this separate command prevents an external gateway outage from making the ordinary local test suite unreliable.
 
 | Command or check           | Result                                                                                                                         |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `pnpm check`               | Web and server TypeScript checks passed.                                                                                       |
-| `pnpm test`                | Nine tests passed, including a live database-and-S3 lifecycle integration test.                                                |
+| `pnpm test`                | Nine local unit and integration tests passed; two network-dependent Paradox tests are skipped by default.                      |
+| `pnpm test:paradox-live`   | Validates the Paradox API token and full publish/install/update/preference lifecycle when the external gateway is available.   |
 | `pnpm build`               | Vite and server production bundles completed successfully.                                                                     |
 | `apps/android: pnpm check` | Android TypeScript check passed.                                                                                               |
 | Expo Android export        | The Android bundle was generated successfully to a temporary verification directory.                                           |
@@ -80,3 +80,27 @@ The integration test creates an isolated temporary user and app, publishes two H
 ## Deployment
 
 The production web bundle is ready for the managed cloud hosting workflow. Create a checkpoint and use the project interface’s **Publish** action to make the cloud Play Store available. After publishing, use that HTTPS address as `EXPO_PUBLIC_API_BASE_URL` when producing the Android build.
+
+### Vercel Node.js deployment
+
+This repository includes a root-level `server.ts` that exports the Express application for Vercel and a `vercel.json` build configuration. Vercel’s Express integration deploys this application as a Node.js function, preserving the tRPC, OAuth, storage-proxy, and static-client routes. Use `pnpm vercel-build` as the Vercel build command; it creates the production bundle and stages the static client assets for Vercel’s CDN.
+
+Before a Vercel production deployment, add the following values in the Vercel project’s **Settings → Environment Variables** for the Production environment. Do not commit any secret values to this repository.
+
+| Variable                                                  | Required purpose                                                                   |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `PARADOX_GATEWAY_URL`                                     | Default Paradox gateway endpoint used for request-scoped synchronization.          |
+| `PARADOX_API_KEY`                                         | Dedicated YOB-OS API token issued by the Paradox default gateway.                  |
+| `PARADOX_PASSPHRASE`                                      | Encryption passphrase required to open the YOB-OS Paradox database.                |
+| `JWT_SECRET`                                              | Signs the authenticated application session.                                       |
+| `VITE_APP_ID`                                             | Manus OAuth application identifier, included in both the server and browser build. |
+| `OAUTH_SERVER_URL`                                        | Manus OAuth service endpoint used by the server SDK.                               |
+| `VITE_OAUTH_PORTAL_URL`                                   | Browser OAuth portal address used for sign-in redirects.                           |
+| `OWNER_OPEN_ID`                                           | Identifies the application owner for administrative access.                        |
+| `BUILT_IN_FORGE_API_URL`                                  | Server endpoint for S3-compatible storage operations.                              |
+| `BUILT_IN_FORGE_API_KEY`                                  | Server credential for S3-compatible storage operations.                            |
+| `VITE_FRONTEND_FORGE_API_URL`                             | Browser-accessible Forge endpoint used by the optional map component.              |
+| `VITE_FRONTEND_FORGE_API_KEY`                             | Browser-accessible Forge credential used by the optional map component.            |
+| `VITE_ANALYTICS_ENDPOINT` and `VITE_ANALYTICS_WEBSITE_ID` | Optional analytics configuration for the browser bundle.                           |
+
+The Paradox database uses the default gateway configuration. Do not configure `PARADOX_STORAGE_CHANNEL` or `PARADOX_LOG_CHANNEL`; no custom Telegram channel is required. The standard Vercel project hostname is `https://yob-os.vercel.app`; `yob-os.vercel.com` is not a supported project address. If an additional custom domain is required, attach a domain that you own through the Vercel project domain settings. After the Vercel deployment is live, set the Android client’s `EXPO_PUBLIC_API_BASE_URL` to the resulting HTTPS address and register that same callback origin with the OAuth application.
