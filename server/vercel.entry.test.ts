@@ -3,23 +3,25 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Vercel entrypoint", () => {
-  it("keeps the Node handler under API routes instead of the static root", () => {
+  it("exports the Express app from the supported root entry", () => {
     const root = resolve(process.cwd());
     const packagePath = resolve(root, "package.json");
-    const apiEntryPath = resolve(root, "api/index.ts");
-    const apiCatchAllPath = resolve(root, "api/[...path].ts");
     const rootEntryPath = resolve(root, "server.ts");
+    const apiDirectoryPath = resolve(root, "api");
+    const vercelConfigPath = resolve(root, "vercel.json");
     const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as {
       main?: string;
     };
+    const vercelConfig = JSON.parse(readFileSync(vercelConfigPath, "utf8")) as {
+      outputDirectory?: string;
+    };
 
     expect(manifest.main).toBeUndefined();
-    expect(existsSync(rootEntryPath)).toBe(false);
-    expect(readFileSync(apiEntryPath, "utf8")).toContain(
+    expect(existsSync(rootEntryPath)).toBe(true);
+    expect(readFileSync(rootEntryPath, "utf8")).toContain(
       "export default createApp();",
     );
-    expect(readFileSync(apiCatchAllPath, "utf8")).toContain(
-      "export default createApp();",
-    );
+    expect(existsSync(apiDirectoryPath)).toBe(false);
+    expect(vercelConfig.outputDirectory).toBe("public");
   });
 });
