@@ -19,16 +19,26 @@ import {
 import { APP_STATUSES, WALLPAPERS } from "../../shared/yob";
 
 const appIdInput = z.object({ appId: z.string().uuid() });
+const versionInput = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(/^v?\d+(?:\.\d+){0,2}(?:[-+][a-zA-Z0-9.-]+)?$/);
 const htmlAppInput = z.object({
   htmlBase64: z.string().min(16),
-  version: z
-    .string()
-    .trim()
-    .min(1)
-    .max(32)
-    .regex(/^v?\d+(?:\.\d+){0,2}(?:[-+][a-zA-Z0-9.-]+)?$/),
+  version: versionInput.optional().default("1.0.0"),
   releaseNotes: z.string().trim().max(2_000).optional(),
 });
+const optionalIconFields = {
+  icon: z.string().trim().min(1).max(32).optional(),
+  iconBase64: z.string().min(16).optional(),
+  iconMimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+};
+const hasValidIconPair = (value: {
+  iconBase64?: string;
+  iconMimeType?: "image/jpeg" | "image/png" | "image/webp";
+}) => Boolean(value.iconBase64) === Boolean(value.iconMimeType);
 
 export const yobRouter = router({
   store: router({
@@ -76,11 +86,16 @@ export const yobRouter = router({
     list: protectedProcedure.query(({ ctx }) => listPublisherApps(ctx.user.id)),
     create: protectedProcedure
       .input(
-        htmlAppInput.extend({
-          name: z.string().trim().min(2).max(96),
-          description: z.string().trim().min(8).max(2_000),
-          icon: z.string().trim().min(1).max(32),
-        })
+        htmlAppInput
+          .extend({
+            name: z.string().trim().min(2).max(96),
+            description: z.string().trim().min(8).max(2_000).optional(),
+            ...optionalIconFields,
+          })
+          .refine(
+            hasValidIconPair,
+            "Icon uploads must include both image data and MIME type."
+          )
       )
       .mutation(({ ctx, input }) =>
         publishApp({ publisherId: ctx.user.id, ...input })

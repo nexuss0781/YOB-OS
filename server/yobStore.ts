@@ -13,10 +13,13 @@ import {
   withParadox,
 } from "./paradox";
 import {
+  DEFAULT_APP_ICON,
   createAppId,
   createVersionId,
+  decodeAndValidateAppIcon,
   decodeAndValidateHtml,
   decodeAndValidateWallpaperImage,
+  makeAppIconStorageKey,
   makeAppSlug,
   makeHtmlStorageKey,
   makeWallpaperStorageKey,
@@ -152,13 +155,25 @@ export async function listPublisherApps(publisherId: number) {
 export async function publishApp(input: {
   publisherId: number;
   name: string;
-  description: string;
-  icon: string;
+  description?: string;
+  icon?: string;
+  iconBase64?: string;
+  iconMimeType?: "image/jpeg" | "image/png" | "image/webp";
   version: string;
   releaseNotes?: string;
   htmlBase64: string;
 }) {
   const packageData = decodeAndValidateHtml(input.htmlBase64);
+  if (Boolean(input.iconBase64) !== Boolean(input.iconMimeType)) {
+    fail(
+      "BAD_REQUEST",
+      "Icon uploads must include both image data and MIME type."
+    );
+  }
+  const iconPackage =
+    input.iconBase64 && input.iconMimeType
+      ? decodeAndValidateAppIcon(input.iconBase64, input.iconMimeType)
+      : null;
   const appId = createAppId();
   const versionId = createVersionId();
   const stored = await storagePut(
@@ -166,6 +181,17 @@ export async function publishApp(input: {
     packageData.bytes,
     "text/html; charset=utf-8"
   );
+  const iconStored = iconPackage
+    ? await storagePut(
+        makeAppIconStorageKey(appId, iconPackage.extension),
+        iconPackage.bytes,
+        iconPackage.mimeType
+      )
+    : null;
+  const appName = input.name.trim();
+  const appDescription =
+    input.description?.trim() || `A standalone HTML app published to YOB-OS.`;
+  const appIcon = iconStored?.url || input.icon?.trim() || DEFAULT_APP_ICON;
   const now = Date.now();
 
   await withParadox(
@@ -179,9 +205,9 @@ export async function publishApp(input: {
             appId,
             input.publisherId,
             makeAppSlug(input.name),
-            input.name.trim(),
-            input.description.trim(),
-            input.icon.trim(),
+            appName,
+            appDescription,
+            appIcon,
             versionId,
             now,
             now,

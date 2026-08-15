@@ -49,6 +49,7 @@ type FeatherName = ComponentProps<typeof Feather>["name"];
 type PhotoMime = "image/jpeg" | "image/png" | "image/webp";
 
 const brandMark = require("./assets/yob-os-icon.png");
+const DEFAULT_APP_ICON = "browser";
 const configuredApi =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined)?.replace(
     /\/$/,
@@ -638,7 +639,17 @@ function LauncherTile({
         style={({ pressed }) => [local.launcherTile, pressed && local.pressed]}
       >
         <View style={local.launcherIcon}>
-          <Text style={local.launcherIconText}>{item.icon}</Text>
+          {isImageIcon(item.icon) ? (
+            <Image
+              source={{ uri: item.icon }}
+              style={local.launcherIconImage}
+              resizeMode="cover"
+            />
+          ) : item.icon === DEFAULT_APP_ICON ? (
+            <Feather name="globe" size={30} color={colors.cyan} />
+          ) : (
+            <Text style={local.launcherIconText}>{item.icon}</Text>
+          )}
           {item.canUpdate ? <View style={local.updateDot} /> : null}
         </View>
         <Text numberOfLines={1} style={local.launcherLabel}>
@@ -1055,9 +1066,23 @@ function ModeButton({
 function AppTile({ value, large = false }: { value: string; large?: boolean }) {
   return (
     <View style={[local.appTile, large && local.appTileLarge]}>
-      <Text style={[local.appTileText, large && { fontSize: 26 }]}>
-        {value}
-      </Text>
+      {isImageIcon(value) ? (
+        <Image
+          source={{ uri: value }}
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: large ? 22 : 15,
+          }}
+          resizeMode="cover"
+        />
+      ) : value === DEFAULT_APP_ICON ? (
+        <Feather name="globe" size={large ? 34 : 25} color={colors.cyan} />
+      ) : (
+        <Text style={[local.appTileText, large && { fontSize: 26 }]}>
+          {value}
+        </Text>
+      )}
     </View>
   );
 }
@@ -1118,6 +1143,10 @@ function Action({
 
 function resolveUrl(value: string) {
   return value.startsWith("http") ? value : `${configuredApi}${value}`;
+}
+
+function isImageIcon(value: string) {
+  return /^https?:\/\//i.test(value) || /^data:image\//i.test(value);
 }
 
 function isPhotoMime(value: string | null | undefined): value is PhotoMime {
@@ -1210,6 +1239,7 @@ const local = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  launcherIconImage: { width: "100%", height: "100%", borderRadius: 18 },
   launcherIconText: { color: colors.text, fontSize: 29 },
   launcherLabel: {
     color: colors.white,

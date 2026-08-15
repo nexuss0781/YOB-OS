@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 export const MAX_HTML_APP_BYTES = 1024 * 1024;
 export const MAX_WALLPAPER_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_APP_ICON_BYTES = 512 * 1024;
+export const DEFAULT_APP_ICON = "browser";
 
 export const WALLPAPERS = ["aurora", "glacier", "dusk", "void"] as const;
 export type WallpaperId = (typeof WALLPAPERS)[number];
@@ -20,6 +22,8 @@ export type WallpaperImagePackage = {
   extension: "jpg" | "png" | "webp";
   mimeType: "image/jpeg" | "image/png" | "image/webp";
 };
+
+export type AppIconPackage = WallpaperImagePackage;
 
 export function decodeAndValidateHtml(base64: string): HtmlPackage {
   if (!base64 || base64.length > Math.ceil(MAX_HTML_APP_BYTES * 1.4)) {
@@ -54,6 +58,50 @@ export function decodeAndValidateHtml(base64: string): HtmlPackage {
     bytes,
     checksum: createHash("sha256").update(bytes).digest("hex"),
     size: bytes.byteLength,
+  };
+}
+
+export function decodeAndValidateAppIcon(
+  base64: string,
+  mimeType: AppIconPackage["mimeType"]
+): AppIconPackage {
+  if (
+    !base64 ||
+    base64.length > Math.ceil(MAX_APP_ICON_BYTES * 1.4) ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)
+  ) {
+    throw new Error("Choose a JPG, PNG, or WebP icon under 512 KiB.");
+  }
+
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_APP_ICON_BYTES) {
+    throw new Error("Choose a JPG, PNG, or WebP icon under 512 KiB.");
+  }
+
+  const png = bytes
+    .subarray(0, 8)
+    .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const jpeg = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+  const webp =
+    bytes.subarray(0, 4).equals(Buffer.from("RIFF")) &&
+    bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  const valid =
+    (mimeType === "image/png" && png) ||
+    (mimeType === "image/jpeg" && jpeg) ||
+    (mimeType === "image/webp" && webp);
+  if (!valid) {
+    throw new Error("The selected icon does not match its declared format.");
+  }
+
+  return {
+    bytes,
+    mimeType,
+    extension:
+      mimeType === "image/jpeg"
+        ? "jpg"
+        : mimeType === "image/png"
+          ? "png"
+          : "webp",
   };
 }
 
@@ -121,6 +169,13 @@ export function makeAppSlug(name: string) {
 
 export function makeHtmlStorageKey(appId: string, versionId: string) {
   return `yob-os/apps/${appId}/versions/${versionId}.html`;
+}
+
+export function makeAppIconStorageKey(
+  appId: string,
+  extension: AppIconPackage["extension"]
+) {
+  return `yob-os/apps/${appId}/icon.${extension}`;
 }
 
 export function makeWallpaperStorageKey(

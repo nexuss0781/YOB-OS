@@ -3,7 +3,6 @@ import { YobAppPlayer } from "@/components/YobAppPlayer";
 import { YobIcon } from "@/components/YobIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { fileAsBase64, formatReleaseDate } from "@/lib/yob";
 import { trpc } from "@/lib/trpc";
@@ -1043,14 +1042,9 @@ function StudioScreen({
 
 function PublishForm({ onPublished }: { onPublished: () => void }) {
   const utils = trpc.useUtils();
-  const [file, setFile] = useState<File | null>(null);
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    icon: "◈",
-    version: "1.0.0",
-    releaseNotes: "",
-  });
+  const [htmlFile, setHtmlFile] = useState<File | null>(null);
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [name, setName] = useState("");
   const create = trpc.yob.publisher.create.useMutation({
     onSuccess: async () => {
       toast.success("Your app is live in the Play Store.");
@@ -1061,14 +1055,33 @@ function PublishForm({ onPublished }: { onPublished: () => void }) {
   });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!file) return toast.error("Choose a standalone HTML file first.");
-    if (file.size > 1024 * 1024)
+    if (!htmlFile) return toast.error("Choose a standalone HTML file first.");
+    if (htmlFile.size > 1024 * 1024)
       return toast.error("HTML packages must be 1 MiB or smaller.");
+    if (
+      iconFile &&
+      (!/^image\/(jpeg|png|webp)$/.test(iconFile.type) ||
+        iconFile.size > 512 * 1024)
+    ) {
+      return toast.error("Choose a JPG, PNG, or WebP icon under 512 KiB.");
+    }
     try {
-      create.mutate({ ...form, htmlBase64: await fileAsBase64(file) });
+      create.mutate({
+        name,
+        htmlBase64: await fileAsBase64(htmlFile),
+        ...(iconFile
+          ? {
+              iconBase64: await fileAsBase64(iconFile),
+              iconMimeType: iconFile.type as
+                | "image/jpeg"
+                | "image/png"
+                | "image/webp",
+            }
+          : {}),
+      });
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Unable to read the package."
+        error instanceof Error ? error.message : "Unable to read the upload."
       );
     }
   };
@@ -1080,26 +1093,9 @@ function PublishForm({ onPublished }: { onPublished: () => void }) {
       <Field label="App name">
         <Input
           required
-          value={form.name}
-          onChange={event => setForm({ ...form, name: event.target.value })}
+          value={name}
+          onChange={event => setName(event.target.value)}
           placeholder="Orbit Runner"
-        />
-      </Field>
-      <Field label="Icon">
-        <Input
-          required
-          value={form.icon}
-          onChange={event => setForm({ ...form, icon: event.target.value })}
-          maxLength={32}
-          placeholder="◈"
-        />
-      </Field>
-      <Field label="Version">
-        <Input
-          required
-          value={form.version}
-          onChange={event => setForm({ ...form, version: event.target.value })}
-          placeholder="1.0.0"
         />
       </Field>
       <Field label="Standalone HTML file">
@@ -1107,32 +1103,24 @@ function PublishForm({ onPublished }: { onPublished: () => void }) {
           required
           type="file"
           accept="text/html,.html"
-          onChange={event => setFile(event.target.files?.[0] ?? null)}
+          onChange={event => setHtmlFile(event.target.files?.[0] ?? null)}
         />
       </Field>
-      <Field label="Description" wide>
-        <Textarea
-          required
-          value={form.description}
-          onChange={event =>
-            setForm({ ...form, description: event.target.value })
-          }
-          placeholder="What does your app do?"
+      <Field label="Custom icon (optional)" wide>
+        <Input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={event => setIconFile(event.target.files?.[0] ?? null)}
         />
-      </Field>
-      <Field label="Release notes" wide>
-        <Textarea
-          value={form.releaseNotes}
-          onChange={event =>
-            setForm({ ...form, releaseNotes: event.target.value })
-          }
-          placeholder="What is included in this version?"
-        />
+        <p className="mt-2 text-xs text-white/45">
+          Leave empty to use the default browser icon. JPG, PNG, or WebP up to
+          512 KiB.
+        </p>
       </Field>
       <div className="sm:col-span-2 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs leading-5 text-white/45">
-          Uploads are stored as immutable HTML packages and played in an
-          isolated sandbox.
+          Only the app name and standalone HTML file are required. YOB-OS adds
+          the default version and description automatically.
         </p>
         <Button
           type="submit"

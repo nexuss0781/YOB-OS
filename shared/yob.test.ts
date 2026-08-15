@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_APP_ICON_BYTES,
   MAX_HTML_APP_BYTES,
+  decodeAndValidateAppIcon,
   decodeAndValidateHtml,
   decodeAndValidateWallpaperImage,
+  makeAppIconStorageKey,
   makeAppSlug,
   makeWallpaperStorageKey,
 } from "./yob";
@@ -57,6 +60,23 @@ describe("HTML application package validation", () => {
     expect(first).not.toBe(second);
   });
 
+  it("accepts optional app icons only when the bytes match the declared format", () => {
+    const png = Buffer.from([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const result = decodeAndValidateAppIcon(
+      png.toString("base64"),
+      "image/png"
+    );
+
+    expect(result.extension).toBe("png");
+    expect(result.bytes).toEqual(png);
+    expect(() =>
+      decodeAndValidateAppIcon(png.toString("base64"), "image/jpeg")
+    ).toThrow("does not match");
+    expect(MAX_APP_ICON_BYTES).toBe(512 * 1024);
+  });
+
   it("accepts only wallpaper bytes whose signature matches the declared image format", () => {
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
     const result = decodeAndValidateWallpaperImage(
@@ -69,6 +89,12 @@ describe("HTML application package validation", () => {
     expect(() =>
       decodeAndValidateWallpaperImage(png.toString("base64"), "image/jpeg")
     ).toThrow("does not match");
+  });
+
+  it("creates isolated app-icon storage keys", () => {
+    expect(makeAppIconStorageKey("app-id", "webp")).toBe(
+      "yob-os/apps/app-id/icon.webp"
+    );
   });
 
   it("creates isolated, non-guessable wallpaper storage keys", () => {
