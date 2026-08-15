@@ -54,3 +54,6 @@
 - [x] Verify or remove obsolete OAuth-related variables from the Vercel production environment.
 - [x] Reconcile the stale local Vercel project link with the active `yob-os.vercel.app` project.
 - [x] Configure the Android client to use `https://yob-os.vercel.app` as its production authentication and API base URL.
+- [x] Build and deliver an installable Android APK configured for the YOB-OS production service.
+- [x] Submit the `production-apk` Expo build profile using the supplied Expo credential and retrieve its APK artifact.
+- [x] Attach the verified Android APK to the user-facing delivery.

@@ -11,7 +11,11 @@
       "edgeToEdgeEnabled": true
     },
     "extra": {
-      "apiBaseUrl": "https://yob-os.vercel.app"
-    }
+      "apiBaseUrl": "https://yob-os.vercel.app",
+      "eas": {
+        "projectId": "6bf116ec-4cf1-4688-9344-99b5e24b57f9"
+      }
+    },
+    "owner": "nexuss-intelliegence"
   }
 }
